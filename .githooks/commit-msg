@@ -1,0 +1,5 @@
+#!/bin/bash
+# Strip any AI/Claude attribution lines from commit messages
+sed -i '' '/Co-Authored-By:.*[Cc]laude/d' "$1"
+sed -i '' '/Co-Authored-By:.*[Aa]nthopic/d' "$1"
+sed -i '' '/🤖.*[Cc]laude/d' "$1"
