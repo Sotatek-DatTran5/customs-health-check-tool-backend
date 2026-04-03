@@ -11,6 +11,7 @@ router = APIRouter(tags=["dashboard"])
 
 super_admin_only = require_roles(UserRole.super_admin)
 allowed_roles = require_roles(UserRole.super_admin, UserRole.tenant_admin, UserRole.expert)
+admin_roles = require_roles(UserRole.super_admin, UserRole.tenant_admin)
 
 
 @router.get("/stats", response_model=DashboardStats)
@@ -30,7 +31,7 @@ def get_recent_tenants_handler(
 @router.get("/recent-users", response_model=list[RecentUser])
 def get_recent_users_handler(
     db: Session = Depends(get_db),
-    current_user: User = Depends(allowed_roles),
+    current_user: User = Depends(admin_roles),
     limit: int = Query(default=10, ge=1, le=50),
 ):
     tenant_id = None if current_user.role == UserRole.super_admin else current_user.tenant_id
@@ -50,7 +51,7 @@ def get_recent_submissions_handler(
 @router.get("/role-distribution", response_model=RoleDistribution)
 def get_role_distribution_handler(
     db: Session = Depends(get_db),
-    current_user: User = Depends(allowed_roles),
+    current_user: User = Depends(admin_roles),
 ):
     tenant_id = None if current_user.role == UserRole.super_admin else current_user.tenant_id
     counts = service.get_role_distribution(db, tenant_id)
