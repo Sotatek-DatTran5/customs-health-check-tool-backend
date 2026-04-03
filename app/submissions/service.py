@@ -92,6 +92,8 @@ def trigger_ai(db: Session, submission_id: int, file_id: int, current_user: User
 
     from app.submissions.tasks import run_ai_analysis
     task = run_ai_analysis.delay(file.id, job.id)
+    job.celery_task_id = task.id
+    db.commit()
 
     return {"message": "AI analysis started", "task_id": task.id}
 
@@ -176,6 +178,7 @@ def create_manual_submission(db: Session, data: ManualInputRequest, user: User) 
     return SubmissionResponse(
         id=submission.id,
         display_id=submission.display_id,
+        type=submission.type.value,
         submitted_at=submission.submitted_at,
         files=[
             SubmissionFileResponse(

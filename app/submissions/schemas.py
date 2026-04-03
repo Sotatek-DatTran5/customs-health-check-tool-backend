@@ -21,6 +21,7 @@ class SubmissionFileResponse(BaseModel):
 class SubmissionResponse(BaseModel):
     id: int
     display_id: str
+    type: str
     submitted_at: datetime
     files: list[SubmissionFileResponse] = []
 
