@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -5,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_roles
 from app.models.user import User, UserRole
+from app.models.submission import AIStatus, DeliveryStatus
 from app.submissions import service
 from app.submissions.schemas import ManualInputRequest, SubmissionResponse, UpdateResultRequest
 
@@ -51,8 +54,19 @@ def get_result_url(submission_id: int, file_id: int, db: Session = Depends(get_d
 # ── Admin site ─────────────────────────────────────────────
 
 @router.get("", response_model=list[SubmissionResponse])
-def get_submissions(db: Session = Depends(get_db), current_user: User = Depends(expert_or_admin)):
-    return service.get_tenant_submissions(db, current_user.tenant_id)
+def get_submissions(
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    ai_status: AIStatus | None = None,
+    delivery_status: DeliveryStatus | None = None,
+    search: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(expert_or_admin),
+):
+    return service.get_tenant_submissions_filtered(
+        db, current_user.tenant_id,
+        date_from, date_to, ai_status, delivery_status, search,
+    )
 
 
 @router.get("/{submission_id}", response_model=SubmissionResponse)
