@@ -1,0 +1,13 @@
+filter gồm có 3 bộ lọc:
+- process: all processing, pending, processing, completed, failed
+- status: all status, not started, running, done, failed
+- delivery: all delivery, not sent, sent, failed
+
+có search by file name, tenant, hoặc cái khác (cần recommend thêm)
+bấm analyzing all là sẽ analyze các file được tích chọn
+có chỗ để tích chọn all (phần này cần cân nhắc là frontend hay backend)
+
+
+ở phần bên trong, AI status cũng có 3 status: not analyzed, analyzing, failed, completed 
+
+phần này chỉ có admin và expert vào được, còn superadmin và user sẽ không thể vào đây

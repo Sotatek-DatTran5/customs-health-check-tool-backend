@@ -1,0 +1,564 @@
+CHC BACKEND — THIẾT KẾ TỔNG QUAN
+===================================
+
+
+TECH STACK
+----------
+    Backend   : Python / FastAPI (SQLAlchemy ORM)
+    Database  : PostgreSQL (Docker, tách sang AWS RDS khi cần scale)
+    Migration : Alembic (version control schema DB, chạy trên mọi máy bằng alembic upgrade head)
+    Queue     : Celery + Redis
+    Storage   : AWS S3
+    Email     : AWS SES (+ per-tenant SMTP override)
+    Auth      : JWT + Redis blacklist
+    Package   : uv
+    Deploy    : Docker Compose (app, worker, redis, postgres)
+
+
+KIẾN TRÚC MULTI-TENANT
+-----------------------
+    Wildcard DNS: *.chc.com trỏ về 1 server
+    Middleware đọc Host header → extract subdomain → tìm tenant trong DB → inject tenant_id vào request
+    Subdomain không tồn tại → 404
+    Admin site dùng domain riêng: admin.chc.com (không qua tenant middleware)
+
+
+ACTORS & PHÂN QUYỀN
+--------------------
+    super_admin   Tài khoản cấp sẵn. Quản lý tenant + tenant admin. Không quản lý user/expert.
+    tenant_admin  Tạo bởi super admin. Quản lý user + expert trong tenant. Có toàn quyền của expert.
+    expert        Tạo bởi tenant admin. Xử lý file, review kết quả AI, gửi kết quả cho user.
+    user          Tạo bởi tenant admin. Upload file, nhận kết quả.
+
+PHÂN QUYỀN THEO TRANG (ADMIN SITE)
+------------------------------------
+                        super_admin     tenant_admin    expert    user
+    Dashboard               ✓               ✓             ✓        -
+    Tenants                 ✓               -             -        -
+    Users                   -               ✓             -        -
+    CHC Health Check        -               ✓             ✓        -
+    Settings                ✓               ✓             ✓        -
+
+    LƯU Ý: user KHÔNG được vào bất kỳ trang admin nào (Dashboard, Tenants, Users, CHC Health Check, Settings).
+    super_admin: chỉ vào Dashboard, Tenants, Settings (không vào Users và CHC Health Check)
+
+    Dashboard hiện data theo role:
+        super_admin   total tenants, active tenants, system users, CHC records (toàn hệ thống)
+                      recent tenants, recent users, recent CHC records
+                      user roles distribution (admins / experts / users)
+        tenant_admin  system users (trong tenant), CHC records (trong tenant),
+                      breakdown: completed / processing / failed
+                      recent CHC records, user roles distribution
+        expert        CHC records (trong tenant),
+                      breakdown: completed / processing / failed
+                      recent CHC records
+
+
+BUSINESS FLOW
+-------------
+    User site có 3 module nhập liệu, flow xử lý sau đó giống nhau:
+
+    Module 1 — E-Customs Health Check (upload file)
+        User upload 1 hoặc nhiều file Excel → submit thành 1 submission
+
+    Module 2 — Batch Dataset (upload file hàng loạt)
+        Tương tự Module 1, cho phép upload nhiều file cùng lúc
+        Dùng chung endpoint với Module 1, chỉ khác type = batch_dataset
+
+    Module 3 — Manual Input (nhập tay)
+        User nhập thông tin commodity (tên, mô tả, thành phần...) → hệ thống tạo file và submit
+
+    Flow xử lý chung sau khi submit:
+        1. Tạo submission → lưu file(s) lên S3 → gửi mail xác nhận cho user
+        2. Expert vào admin → thấy submission mới → mở xem từng file
+        3. Expert bấm "AI Analyze" trên từng file → Celery worker gọi AI API (7-15 phút) ngầm
+        4. AI xong → lưu file kết quả lên S3 → cập nhật AI status
+        5. Expert review → chỉnh sửa nếu cần → bấm "Upload Result"
+        6. Hệ thống gửi mail cho user kèm presigned URL 7 ngày để tải file kết quả
+
+    Lưu ý:
+    - AI Analyze và Upload Result hoạt động ở cấp độ từng file (không phải cả submission)
+    - Expert bấm xong có thể tắt trình duyệt, Celery worker xử lý độc lập
+    - AI job fail → không retry tự động, expert tự bấm lại
+
+
+FILE ACCESS
+-----------
+    Expert/Admin xem file gốc   : Proxy qua backend (stream từ S3, không expire)
+    User tải file kết quả       : Presigned URL 7 ngày gửi kèm mail (generate mới mỗi lần request)
+
+
+EMAIL TRIGGERS (AWS SES, plain text, gửi async)
+------------------------------------------------
+    Upload confirmation   Tự động khi user submit thành công
+    Kết quả phân tích     Khi expert bấm "Upload Result" — kèm presigned URL 7 ngày
+    Reset password        Khi admin request → gửi link reset cho user/expert
+    Tạo tài khoản mới     Khi admin tạo user/expert → gửi mail để user login và đổi pass lần đầu
+
+
+---
+
+
+ADMIN SITE (admin.chc.com)
+===========================
+
+
+1. LOGIN
+--------
+    POST /auth/login
+        Input: email, password, role_type (dropdown: Admin / User)
+        Logic:
+            Verify credentials
+            Nếu role_type = Admin → kiểm tra role là super_admin/tenant_admin/expert → trả JWT
+            Nếu role_type = User → kiểm tra user thuộc đúng tenant → trả JWT + redirect URL
+        UI: Form đơn giản (email, password, vai trò dropdown, nút Login)
+
+
+2. DASHBOARD
+------------
+    GET /dashboard/stats
+        Trả về: tổng tenant, tenant active, tổng system users, tổng CHC records
+        Lọc theo role: super_admin thấy toàn hệ thống, tenant_admin/expert thấy trong tenant
+        Breakdown: completed / processing / failed records
+        UI: 4 stat cards (màu xanh lá, xanh dương, cam, đỏ) + 1 chart placeholder (role distribution)
+
+    GET /dashboard/recent-tenants     (super_admin only)
+        Trả về: danh sách tenant mới tạo gần đây (id, name, code, created_at)
+        Limit: 10 (default), max 50
+
+    GET /dashboard/recent-users
+        Trả về: danh sách user/expert mới tạo gần đây (id, full_name, email, role, created_at)
+        Scope: super_admin thấy toàn hệ thống, tenant_admin thấy trong tenant
+        Limit: 10 (default), max 50
+
+    GET /dashboard/recent-submissions
+        Trả về: danh sách submission gần đây (id, display_id, type, submitted_at, uploaded_by)
+        Scope: super_admin thấy toàn hệ thống, tenant_admin/expert thấy trong tenant
+        Limit: 10 (default), max 50
+
+    GET /dashboard/role-distribution
+        Trả về: số lượng theo từng role {super_admin, tenant_admin, expert, user}
+        Scope: super_admin thấy toàn hệ thống, tenant_admin thấy trong tenant
+
+
+3. TENANTS (super_admin only)
+-----------------------------
+    GET /tenants
+        Trả về: danh sách tenant (tên, code, status, created date, admin info)
+        Filter: status (active/inactive), search by name/code
+
+    POST /tenants
+        Input: name, tenant_code, description, admin_email, status
+        Logic:
+            Validate tenant_code unique (dùng làm subdomain + prefix document ID)
+            Tạo tenant
+            Tạo tài khoản tenant_admin gắn với tenant
+            Generate random password cho admin
+            Gửi mail kèm password tạm thời để admin login lần đầu
+
+    GET /tenants/{id}
+        Trả về: chi tiết tenant + thông tin admin
+
+    PUT /tenants/{id}
+        Input: name, description, admin_email, status
+        Logic: cập nhật tenant + thông tin admin đi kèm
+
+    DELETE /tenants/{id}
+        Logic: soft delete (is_active = false)
+
+    UI: List view có search + filter status. Create tenant form chia 2 bước:
+        Bước 1: Tenant Info (name, code, description)
+        Bước 2: Admin Account (email)
+
+
+4. USERS (tenant_admin only)
+----------------------------
+    LƯU Ý: Chỉ tenant_admin được vào trang này. Expert và user KHÔNG được vào.
+    Hiển thị tất cả user và expert trong tenant (gộp chung 1 list, filter theo role)
+
+    GET /users
+        Filter: role (expert/user), status, search by name/email
+
+    POST /users
+        Input: full_name, email, role (user/expert)
+        Logic:
+            Tạo user trong tenant hiện tại
+            Generate random password
+            Gửi mail kèm password tạm thời để user login và đổi pass lần đầu
+            User nên đổi pass ngay sau khi login (is_first_login = true)
+
+    PUT /users/{id}
+        Input: full_name, is_active
+        Logic: chỉ thao tác trong cùng tenant
+
+    DELETE /users/{id}
+        Logic: soft delete
+
+    POST /users/{id}/reset-password
+        Logic: tạo password_reset_token → gửi mail link reset cho user/expert
+
+    UI: List view có filter by role (All / Expert / User) + user options dropdown
+        Create user form: full_name, email, role (User/Expert radio button)
+
+
+5. CHC HEALTH CHECK (tenant_admin + expert)
+-------------------------------------------
+    LƯU Ý: Chỉ tenant_admin và expert được vào trang này. super_admin và user KHÔNG được vào.
+
+    Submission là đơn vị gom nhóm, mỗi submission chứa 1 hoặc nhiều file.
+    Mỗi file có AI status riêng và action riêng.
+    3 cột status ở list là aggregate từ các file bên trong:
+        Processing  : all / pending / processing / completed / failed
+        AI Analysis : all / not_started / running / completed / failed
+        Delivery    : all / not_sent / sent / failed
+
+    Aggregate logic — WORST FIRST (priority order):
+        failed > running > completed > not_started
+        (submission hiện status "xấu nhất" trong các files)
+
+    AI status uniform: not_started / running / completed / failed (dùng xuyên suốt: model, API, filter, display)
+
+    Document ID format: {TENANT_CODE}-{số thứ tự 3 chữ số, tăng dần theo tenant}
+    Ví dụ: ACME-001, ACME-002, TECHSTART-001
+
+    GET /submissions
+        Trả về: list submission (display_id, tenant code, số file, uploaded by, upload date, 3 cột status)
+        Columns hiển thị:
+            - Display ID (VD: ACME-001)
+            - Tenant (chỉ hiển thị khi super_admin xem)
+            - Số file
+            - Uploaded by (full_name)
+            - Upload date
+            - Processing status
+            - AI status
+            - Delivery status
+        Filter:
+            - date_from / date_to (submitted_at range)
+            - ai_status: all / not_started / running / completed / failed
+            - delivery_status: all / not_sent / sent / failed
+            - search: tìm theo file name, display_id, hoặc uploaded_by
+        Frontend xử lý "Select all" checkbox → gửi list file_ids lên analyze-all endpoint
+        super_admin thấy tất cả submissions toàn hệ thống
+        tenant_admin / expert thấy submissions trong tenant
+
+    GET /submissions/{id}
+        Trả về: chi tiết submission + danh sách file bên trong
+        Mỗi file gồm: file name, AI status (4 giá trị: not_started / running / completed / failed),
+        action (AI Analyze / Upload Result)
+
+    SubmissionFile schema (trả về trong list + detail):
+        id              : int              — Dùng để gọi API (analyze, result, publish)
+        submission_id    : int              — Context, FE không cần extract từ URL
+        original_filename: str              — Display tên file
+        ai_status       : not_started / running / completed / failed
+        delivery_status : not_sent / sent / failed
+        published_at    : datetime | null   — Ngày publish (null nếu chưa)
+        created_at      : datetime          — Ngày upload
+
+    Backend trả về đầy đủ SubmissionFile schema. KHÔNG trả s3_key, ai_s3_key, expert_s3_key (internal paths).
+
+    Nút "Analyze All": chỉ analyze các file được tick chọn (frontend gửi list file_ids),
+    chỉ process các file có AI status = not_started hoặc failed
+
+    GET /submissions/{id}/files/{file_id}/download
+        Logic:
+            Kiểm tra quyền (expert/admin cùng tenant)
+            Stream file gốc từ S3 về (proxy)
+
+    POST /submissions/{id}/files/{file_id}/analyze
+        Logic:
+            Kiểm tra AI status = not_started hoặc failed
+            Đẩy Celery job
+            Cập nhật AI status = running
+            Trả response ngay
+
+        Celery worker xử lý ngầm:
+            Tải file từ S3
+            Gọi AI API
+            Nhận file kết quả → lưu S3
+            Cập nhật AI status = completed (hoặc failed nếu lỗi)
+
+    POST /submissions/{id}/analyze-all
+        Input: file_ids (danh sách ID các file được chọn)
+        Logic:
+            Lọc các file trong danh sách có AI status = not_started hoặc failed
+            Đẩy Celery job cho từng file
+            Cập nhật AI status = running cho từng file
+            Trả response ngay
+
+    GET /submissions/{id}/files/{file_id}/ai-result/download
+        Logic:
+            Kiểm tra AI status = completed
+            Stream file kết quả AI từ S3 về (proxy)
+
+    PUT /submissions/{id}/files/{file_id}/result
+        Input: file Excel chỉnh sửa (optional), notes
+        Logic:
+            Nếu có file mới → upload lên S3 (expert_s3_key)
+            Lưu notes
+            reviewed_by = current_user
+
+    POST /submissions/{id}/files/{file_id}/publish
+        Logic:
+            Xác định file kết quả cuối: dùng expert_s3_key nếu có, fallback ai_s3_key
+            Generate presigned URL 7 ngày
+            Gửi mail cho user (async)
+            Cập nhật delivery status = sent
+
+
+6. SETTINGS
+-----------
+    GET /settings/profile
+        Trả về: thông tin tài khoản hiện tại (read-only: full_name, email, role, username)
+
+    POST /settings/change-password
+        Input: current_password, new_password, confirm_new_password
+        Logic:
+            Verify current_password đúng
+            Hash new_password → lưu
+            Invalidate token hiện tại (thêm vào Redis blacklist) → bắt login lại
+
+    GET /settings/email-config     (tenant_admin only)
+        Trả về: cấu hình SMTP của tenant hiện tại (smtp_host, smtp_port, sender_email,
+                sender_name, smtp_username, smtp_password, is_enabled)
+
+    PUT /settings/email-config     (tenant_admin only)
+        Input: smtp_host, smtp_port, sender_email, sender_name, smtp_username, smtp_password, is_enabled
+        Logic:
+            Lưu config SMTP cho tenant (upsert)
+            Nếu is_enabled = true → dùng SMTP này để gửi mail cho tenant
+            Nếu is_enabled = false → fallback về AWS SES mặc định
+
+    UI Settings: có 2 tab
+        Tab Profile: xem thông tin tài khoản
+        Tab Email Config: form cấu hình SMTP
+
+
+---
+
+
+USER SITE (*.chc.com)
+======================
+
+
+1. AUTH
+-------
+    POST /auth/login
+        Input: username hoặc email, password, role_type (Admin/User)
+        Logic:
+            Verify credentials
+            Nếu role_type = User → kiểm tra user thuộc đúng tenant → trả JWT + redirect URL
+            Nếu role_type = Admin → kiểm tra role là tenant_admin/expert/super_admin → trả JWT
+
+    POST /auth/logout
+        Logic: thêm token vào Redis blacklist (TTL = thời gian còn lại của token)
+
+    POST /auth/reset-password
+        Input: token (từ link mail), new_password
+        Logic: verify token còn hạn + chưa dùng → lưu password mới → đánh dấu token đã dùng
+
+
+2. E-CUSTOMS HEALTH CHECK
+-------------------------
+    UI: Trang chính với nút "Upload File" + 1 vùng drop file
+
+    POST /submissions/upload
+        Input: danh sách file Excel (multipart/form-data, 1 hoặc nhiều file)
+        Validate: chỉ nhận .xlsx và .xls (validate extension + MIME type), không giới hạn size
+        Logic:
+            Query số submission hiện có của tenant → tính display_id = {tenant_code}-{count+1}
+            (zero-padded 3 chữ số)
+            Tạo submission record (kèm display_id, type = file_upload)
+            Lưu từng file lên S3: {tenant_id}/{user_id}/{submission_id}/{filename}
+            Tạo submission_file record cho từng file
+            Gửi mail xác nhận (async)
+            Trả response thành công ngay
+
+    GET /submissions
+        Trả về: danh sách submission của user hiện tại (request history)
+        Filter: date range (upload date)
+        Mỗi submission: request ID, số file, upload date, status, result file (nếu có)
+
+    GET /submissions/{id}
+        Trả về: chi tiết submission + danh sách file + status từng file
+
+    GET /submissions/{id}/files/{file_id}/result
+        Logic:
+            Kiểm tra file đã published chưa
+            Generate presigned URL 7 ngày (tính từ lúc gọi)
+            Trả URL để user tải
+
+
+3. BATCH DATASET
+----------------
+    Tương tự E-Customs Health Check, dùng chung endpoint /submissions/upload
+    type = batch_dataset
+    UI: Khác label/heading, logic hoàn toàn giống
+
+
+4. MANUAL INPUT
+---------------
+    UI: Form nhập tay với 6 trường
+
+    POST /submissions/manual
+        Input: commodity_name, description, function, structure_components,
+               material_composition, technical_specification, additional_notes (optional)
+        Logic:
+            Tạo file từ dữ liệu nhập (stub: lưu JSON, implement Excel generation ở Phase 2)
+            Lưu S3 (stub: skip ở Phase 1)
+            Tạo submission record (type = manual_input)
+            Tạo submission_file record
+            Gửi mail xác nhận (async — stub ở Phase 1)
+            Trả response thành công ngay
+
+    GET /submissions (dùng chung với các module trên)
+
+
+---
+
+
+DATABASE SCHEMA
+===============
+
+
+tenants
+    id, name, tenant_code (unique), subdomain (unique), description, is_active, created_at, updated_at
+
+tenant_email_configs         -- model: TenantEmailConfig
+    id, tenant_id (FK, unique), smtp_host, smtp_port, sender_email, sender_name,
+    smtp_username, smtp_password (encrypted), is_enabled, created_at, updated_at
+
+users
+    id, tenant_id (FK, nullable với super_admin), email (unique), username (unique),
+    password_hash, full_name, role (super_admin/tenant_admin/expert/user),
+    is_active, is_first_login, last_login_at, created_at, updated_at
+
+password_reset_tokens
+    id, user_id (FK), token (hashed, unique), expires_at, used_at, created_at
+
+submissions
+    id, tenant_id (FK), user_id (FK), display_id (vd: ACME-001, unique per tenant),
+    type (file_upload/batch_dataset/manual_input),
+    submitted_at, created_at, updated_at
+
+submission_files
+    id, submission_id (FK), original_filename, s3_key,
+    ai_status (not_started/running/completed/failed),
+    ai_s3_key (nullable), expert_s3_key (nullable),
+    reviewed_by (FK users, nullable), notes (nullable),
+    delivery_status (not_sent/sent/failed),
+    published_at (nullable),
+    created_at, updated_at
+
+analysis_jobs
+    id, submission_file_id (FK), triggered_by (FK users),
+    celery_task_id, status (queued/running/success/failed),
+    started_at, completed_at, error_message, created_at
+
+email_logs
+    id, user_id (FK), submission_id (FK, nullable), submission_file_id (FK, nullable),
+    type (upload_confirmation/result/reset_password/account_created),
+    recipient_email, status (sent/failed), sent_at, created_at
+
+system_config
+    id, key (unique), value, updated_at
+
+
+---
+
+
+CÁC QUYẾT ĐỊNH KỸ THUẬT BỔ SUNG
+==================================
+
+1. Retry khi AI job thất bại
+   - KHÔNG retry tự động
+   - Job fail → status = failed → expert tự bấm "AI Analyze" lại thủ công
+
+2. Validation file upload
+   - Chỉ nhận .xlsx và .xls (validate cả extension lẫn MIME type)
+   - Không giới hạn size file
+
+3. Filter danh sách submissions
+   - Filter theo date range (submitted_at), processing_status, ai_status, delivery_status
+   - Search theo file name và display_id
+   - Áp dụng cả User site lẫn Admin site
+
+4. Document ID format
+   - Đánh ID theo từng tenant riêng biệt, tăng dần
+   - Format: {TENANT_CODE}-{sequential_number} (zero-padded 3 chữ số)
+   - Ví dụ: ACME-001, ACME-002, ACME-003...
+   - Dùng PostgreSQL advisory lock để tránh race condition khi insert
+
+5. Token blacklist khi logout
+   - Dùng Redis lưu blacklist token
+   - Khi logout: lưu token vào Redis với TTL = thời gian còn lại của token
+   - Mỗi request: middleware check token có trong blacklist không → 401 nếu có
+
+6. Deploy
+   - 1 server, Docker Compose
+   - Gồm các container: app (Python backend), worker (Celery), redis, postgres
+   - restart: always → tự bật lại khi server khởi động lại
+
+7. Manual Input — Phase 1 stub
+   - File generation (JSON → Excel): stub lưu dạng structured text
+   - S3 upload: stub skip, vẫn tạo submission_file record với s3_key = null
+   - Implement đầy đủ ở Phase 2 (S3 + Excel generation)
+
+8. Email sending — Phase 1 stub
+   - Tất cả email triggers: stub log ra console/stdout
+   - Implement đầy đủ ở Phase 2 (AWS SES + per-tenant SMTP)
+
+
+---
+
+ENDPOINTS SUMMARY
+=================
+
+PUBLIC (no auth)
+    POST /auth/login              Login
+    POST /auth/reset-password     Request password reset
+    POST /auth/reset-password     Submit new password (token)
+
+AUTHENTICATED (any role)
+    POST /auth/logout             Logout
+    GET  /settings/profile        Xem thông tin tài khoản
+    POST /settings/change-password Đổi password
+
+AUTHENTICATED (expert + tenant_admin)
+    GET  /submissions              List submission (tenant-scoped)
+    GET  /submissions/{id}        Chi tiết submission
+    GET  /submissions/{id}/files/{fid}/download        Download file gốc
+    POST /submissions/{id}/files/{fid}/analyze         Trigger AI cho 1 file
+    POST /submissions/{id}/analyze-all                  Trigger AI cho nhiều files
+    PUT  /submissions/{id}/files/{fid}/result            Expert upload kết quả đã sửa
+    POST /submissions/{id}/files/{fid}/publish          Publish → gửi mail cho user
+    GET  /dashboard/stats          Dashboard stats (tenant-scoped)
+    GET  /dashboard/recent-users   Users mới gần đây
+    GET  /dashboard/recent-submissions  Submissions gần đây
+    GET  /dashboard/role-distribution  Phân bố theo role
+
+AUTHENTICATED (tenant_admin)
+    GET  /settings/email-config   Xem SMTP config
+    PUT  /settings/email-config   Cập nhật SMTP config
+    GET  /users                   List users trong tenant
+    POST /users                   Tạo user/expert
+    PUT  /users/{id}              Cập nhật user
+    DELETE /users/{id}            Xóa user (soft delete)
+    POST /users/{id}/reset-password  Reset password user
+
+AUTHENTICATED (super_admin)
+    GET  /dashboard/stats         Dashboard stats (toàn hệ thống)
+    GET  /dashboard/recent-tenants  Tenants mới gần đây
+    GET  /dashboard/recent-users   Users mới (toàn hệ thống)
+    GET  /dashboard/role-distribution  Phân bố toàn hệ thống
+    GET  /tenants                 List tenants
+    POST /tenants                 Tạo tenant + tenant_admin
+    GET  /tenants/{id}            Chi tiết tenant
+    PUT  /tenants/{id}            Cập nhật tenant
+    DELETE /tenants/{id}          Xóa tenant (soft delete)
+
+AUTHENTICATED (user — user site)
+    POST /submissions/upload      Upload file (file_upload)
+    GET  /submissions             List submission của user
+    GET  /submissions/{id}        Chi tiết submission
+    GET  /submissions/{id}/files/{fid}/result  Presigned URL kết quả

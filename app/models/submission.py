@@ -20,18 +20,26 @@ class DeliveryStatus(str, enum.Enum):
     failed = "failed"
 
 
+class SubmissionType(str, enum.Enum):
+    file_upload = "file_upload"
+    batch_dataset = "batch_dataset"
+    manual_input = "manual_input"
+
+
 class Submission(Base):
     __tablename__ = "submissions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"))
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    display_id: Mapped[str] = mapped_column(String(50), unique=True)  # vd: ACME-001
+    display_id: Mapped[str] = mapped_column(String(50), unique=True)  # e.g. ACME-001
+    type: Mapped[SubmissionType] = mapped_column(Enum(SubmissionType), default=SubmissionType.file_upload)
     submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="submissions")
+    user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
     files: Mapped[list["SubmissionFile"]] = relationship("SubmissionFile", back_populates="submission")
 
 
@@ -53,6 +61,7 @@ class SubmissionFile(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     submission: Mapped["Submission"] = relationship("Submission", back_populates="files")
+    reviewer: Mapped["User"] = relationship("User", foreign_keys=[reviewed_by])
     analysis_jobs: Mapped[list["AnalysisJob"]] = relationship("AnalysisJob", back_populates="submission_file")
 
 
