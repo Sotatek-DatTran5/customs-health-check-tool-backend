@@ -13,7 +13,8 @@ docker compose up -d
 
 echo ""
 echo "=== Server đã khởi động ==="
-echo "API:  http://localhost:8000"
-echo "Docs: http://localhost:8000/docs"
+echo "API:  http://localhost:8329"
+echo "Docs: http://localhost:8329/docs"
+echo "MailHog UI: http://localhost:8025"
 echo ""
 echo "Chạy ./scripts/status.sh để kiểm tra trạng thái"
