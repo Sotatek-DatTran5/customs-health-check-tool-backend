@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -58,5 +58,5 @@ def publish_file(db: Session, file: SubmissionFile, reviewed_by: int, notes: str
     file.delivery_status = DeliveryStatus.sent
     file.reviewed_by = reviewed_by
     file.notes = notes
-    file.published_at = datetime.utcnow()
+    file.published_at = datetime.now(timezone.utc)
     db.commit()
