@@ -18,14 +18,6 @@ class SubmissionFileResponse(BaseModel):
         from_attributes = True
 
 
-class SubmissionFilter(BaseModel):
-    date_from: datetime | None = None
-    date_to: datetime | None = None
-    ai_status: AIStatus | None = None
-    delivery_status: DeliveryStatus | None = None
-    search: str | None = None
-
-
 class SubmissionResponse(BaseModel):
     id: int
     display_id: str
