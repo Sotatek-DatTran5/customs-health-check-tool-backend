@@ -1,1 +1,7 @@
 .worktrees/
+uv.lock
+.env
+__pycache__/
+*.pyc
+*.pyo
+
