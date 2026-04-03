@@ -2,11 +2,12 @@ import json
 from datetime import datetime
 
 from fastapi import HTTPException, UploadFile, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.submissions import repository
 from app.submissions.schemas import ManualInputRequest, SubmissionFileResponse, SubmissionResponse, UpdateResultRequest
-from app.models.submission import AIStatus, DeliveryStatus, SubmissionType
+from app.models.submission import AIStatus, DeliveryStatus, Submission, SubmissionFile, SubmissionType
 from app.models.user import User
 
 
@@ -38,6 +39,42 @@ def get_submission(db: Session, submission_id: int, tenant_id: int):
 
 def get_tenant_submissions(db: Session, tenant_id: int):
     return repository.get_submissions_by_tenant(db, tenant_id)
+
+
+def get_tenant_submissions_filtered(
+    db: Session,
+    tenant_id: int,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    ai_status: AIStatus | None = None,
+    delivery_status: DeliveryStatus | None = None,
+    search: str | None = None,
+) -> list:
+    query = (
+        db.query(Submission)
+        .filter(Submission.tenant_id == tenant_id)
+        .join(User, Submission.user_id == User.id)
+        .join(SubmissionFile, Submission.id == SubmissionFile.submission_id)
+    )
+
+    if date_from:
+        query = query.filter(Submission.submitted_at >= date_from)
+    if date_to:
+        query = query.filter(Submission.submitted_at <= date_to)
+    if search:
+        query = query.filter(
+            or_(
+                Submission.display_id.ilike(f"%{search}%"),
+                SubmissionFile.original_filename.ilike(f"%{search}%"),
+                User.full_name.ilike(f"%{search}%"),
+            )
+        )
+    if ai_status:
+        query = query.filter(SubmissionFile.ai_status == ai_status)
+    if delivery_status:
+        query = query.filter(SubmissionFile.delivery_status == delivery_status)
+
+    return query.distinct().order_by(Submission.submitted_at.desc()).all()
 
 
 def trigger_ai(db: Session, submission_id: int, file_id: int, current_user: User):
@@ -143,10 +180,12 @@ def create_manual_submission(db: Session, data: ManualInputRequest, user: User) 
         files=[
             SubmissionFileResponse(
                 id=file.id,
+                submission_id=file.submission_id,
                 original_filename=file.original_filename,
                 ai_status=file.ai_status,
                 delivery_status=file.delivery_status,
                 published_at=file.published_at,
+                created_at=file.created_at,
             )
         ],
     )
