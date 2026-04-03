@@ -5,6 +5,7 @@ from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.core import storage, email
 from app.submissions import repository
 from app.submissions.schemas import ManualInputRequest, SubmissionFileResponse, SubmissionResponse, UpdateResultRequest
 from app.models.submission import AIStatus, DeliveryStatus, Submission, SubmissionFile, SubmissionType
@@ -17,12 +18,17 @@ def upload(db: Session, files: list[UploadFile], user: User) -> object:
 
     submission = repository.create_submission(db, user.tenant_id, user.id, display_id)
 
-    for file in files:
-        s3_key = f"{user.tenant_id}/{user.id}/{submission.id}/{file.filename}"
-        # TODO: upload file lên S3
-        repository.create_file(db, submission.id, file.filename, s3_key)
+    for up_file in files:
+        s3_key = f"{user.tenant_id}/{user.id}/{submission.id}/{up_file.filename}"
+        content = up_file.file.read()
+        storage.upload_file(s3_key, content, up_file.content_type or "application/octet-stream")
+        repository.create_file(db, submission.id, up_file.filename, s3_key)
 
-    # TODO: gửi mail xác nhận (Celery task)
+    email.send_email(
+        to=user.email,
+        subject=f"Submission {display_id} uploaded",
+        body=f"Your submission {display_id} with {len(files)} file(s) has been received.",
+    )
     return submission
 
 
@@ -98,15 +104,17 @@ def trigger_ai(db: Session, submission_id: int, file_id: int, current_user: User
     return {"message": "AI analysis started", "task_id": task.id}
 
 
-def download_file(submission_id: int, file_id: int, tenant_id: int, db: Session) -> None:
+def download_file(submission_id: int, file_id: int, tenant_id: int, db: Session):
     submission = get_submission(db, submission_id, tenant_id)
     file = repository.get_file_by_id(db, file_id)
 
     if not file or file.submission_id != submission.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
 
-    # TODO: stream file từ S3
-    pass
+    if not file.s3_key:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found in storage")
+
+    return storage.download_file_stream(file.s3_key)
 
 
 def update_result(db: Session, submission_id: int, file_id: int, payload: UpdateResultRequest, uploaded_file, current_user: User):
@@ -118,7 +126,8 @@ def update_result(db: Session, submission_id: int, file_id: int, payload: Update
 
     if uploaded_file:
         expert_s3_key = f"{current_user.tenant_id}/results/{submission.id}/{file_id}/{uploaded_file.filename}"
-        # TODO: upload file chỉnh sửa lên S3
+        content = uploaded_file.file.read()
+        storage.upload_file(expert_s3_key, content, uploaded_file.content_type or "application/octet-stream")
         file.expert_s3_key = expert_s3_key
 
     if payload.notes:
@@ -138,8 +147,21 @@ def publish(db: Session, submission_id: int, file_id: int, current_user: User):
     if not result_key:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No result file available")
 
-    # TODO: generate presigned URL 7 ngày
-    # TODO: gửi mail cho user (Celery task)
+    # Generate presigned URL (7 days)
+    presigned_url = storage.generate_presigned_url(result_key, expires_in=604800)
+
+    # Send result email to submitting user
+    submission_user = db.query(User).filter(User.id == submission.user_id).first()
+    if submission_user:
+        email.send_email(
+            to=submission_user.email,
+            subject=f"Result ready for {submission.display_id}",
+            body=(
+                f"Your submission {submission.display_id} has a new result available.\n\n"
+                f"Download link (valid 7 days): {presigned_url}"
+            ),
+        )
+
     repository.publish_file(db, file, current_user.id, file.notes)
     return {"message": "Result published"}
 
@@ -165,14 +187,21 @@ def create_manual_submission(db: Session, data: ManualInputRequest, user: User) 
         "additional_notes": data.additional_notes,
     }
     filename = f"manual_input_{display_id}.json"
+    s3_key = f"{user.tenant_id}/{user.id}/{submission.id}/{filename}"
+    content_bytes = json.dumps(content, ensure_ascii=False, indent=2).encode("utf-8")
+    storage.upload_file(s3_key, content_bytes, "application/json")
 
-    # 4. s3_key = None (Phase 1 stub — no S3 upload yet)
-    file = repository.create_file(db, submission.id, filename, s3_key=None)
+    file = repository.create_file(db, submission.id, filename, s3_key)
 
-    # 5. SubmissionFile record already created with ai_status=not_started, delivery_status=not_sent (defaults)
-    # 6. Log email stub to console
-    print(f"[EMAIL STUB] Confirmation email for manual submission {display_id} to user {user.email} at {datetime.now().isoformat()}")
-    print(f"[EMAIL STUB] Content preview: {json.dumps(content, ensure_ascii=False)[:200]}")
+    # Send confirmation email
+    email.send_email(
+        to=user.email,
+        subject=f"Manual submission {display_id} received",
+        body=(
+            f"Your manual input submission {display_id} has been received.\n\n"
+            f"Commodity: {data.commodity_name}"
+        ),
+    )
 
     # 7. Return SubmissionResponse
     return SubmissionResponse(
@@ -203,5 +232,8 @@ def get_result_url(db: Session, submission_id: int, file_id: int, user_id: int):
     if not file or file.submission_id != submission.id or not file.published_at:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Result not available")
 
-    # TODO: generate presigned URL 7 ngày từ S3
-    return {"url": "presigned_url_placeholder"}
+    result_key = file.expert_s3_key or file.ai_s3_key
+    if not result_key:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Result not available")
+    url = storage.generate_presigned_url(result_key, expires_in=604800)
+    return {"url": url}

@@ -7,7 +7,7 @@
 
 ## 1. Project Phases
 
-### Phase 1 — Foundation ✅ In Progress
+### Phase 1 — Foundation ✅ Complete
 **Goal:** Core multi-tenant backend with auth, tenant/user management, and basic submission flow.
 
 | # | Task | Status | Notes |
@@ -17,21 +17,38 @@
 | 1.3 | JWT auth + Redis blacklist | ✅ | Done |
 | 1.4 | Tenant CRUD (super_admin) | ✅ | Done |
 | 1.5 | User/expert CRUD (tenant_admin) | ✅ | Done |
-| 1.6 | Submission upload (file API scaffold) | ✅ | Done (S3 stub) |
-| 1.7 | Celery worker setup | ✅ | Done (task stub) |
+| 1.6 | Submission upload (file API) | ✅ | Done |
+| 1.7 | Celery worker setup | ✅ | Done |
 | 1.8 | Dashboard stats endpoint | ✅ | Done |
 
-### Phase 2 — S3 & Email Integration 🟡 Planned
-**Goal:** Connect file storage and email delivery.
+### Phase 1.5 — Local Dev Infra ✅ Complete (2026-04-03)
+**Goal:** Fake S3 (LocalStack) + fake SMTP (MailHog) for local dev without changing FE/BE interface.
 
 | # | Task | Status | Notes |
 |---|---|---|---|
-| 2.1 | S3 client + upload task | 🟡 TODO | |
-| 2.2 | S3 presigned URL for user result download | 🟡 TODO | 7-day expiry |
-| 2.3 | S3 stream download for expert/admin | 🟡 TODO | No expiry |
-| 2.4 | AWS SES email integration | 🟡 TODO | Default sender |
-| 2.5 | Per-tenant SMTP override | 🟡 TODO | Settings → email-config |
-| 2.6 | Email task (upload confirmation, result) | 🟡 TODO | Celery tasks |
+| 1.5.1 | LocalStack + MailHog in docker-compose | ✅ | Done |
+| 1.5.2 | `app/core/storage.py` (S3 client) | ✅ | LocalStack or real AWS via `AWS_ENDPOINT_URL` |
+| 1.5.3 | `app/core/email.py` (SMTP client) | ✅ | MailHog or real SMTP via `SMTP_HOST` |
+| 1.5.4 | `app/core/config.py` updated env vars | ✅ | `AWS_ENDPOINT_URL`, `S3_BUCKET_NAME`, SMTP fields |
+| 1.5.5 | `.env.example` updated | ✅ | Dev defaults for LocalStack + MailHog |
+| 1.5.6 | `scripts/setup-local.sh` bucket init | ✅ | `aws --endpoint-url` + health check |
+| 1.5.7 | `app/submissions/service.py` wired | ✅ | All TODOs replaced with real storage/email calls |
+| 1.5.8 | `app/submissions/tasks.py` wired | ✅ | `storage` imported; AI stub TODOs preserved for Phase 3 |
+
+### Phase 2 — S3 & Email Integration ✅ Phase 1.5 Done
+**Goal:** Local dev with LocalStack (S3) + MailHog (SMTP) — FE/BE interface unchanged.
+
+| # | Task | Status | Notes |
+|---|---|---|---|
+| 2.1 | S3 client + LocalStack (dev) / real AWS (prod) | ✅ Done | `app/core/storage.py`; endpoint via `AWS_ENDPOINT_URL` |
+| 2.2 | S3 presigned URL for user result download | ✅ Done | `storage.generate_presigned_url()`, 7-day expiry |
+| 2.3 | S3 stream download for expert/admin | ✅ Done | `storage.download_file_stream()` → `StreamingResponse` |
+| 2.4 | SMTP client + MailHog (dev) / real SMTP (prod) | ✅ Done | `app/core/email.py`; host via `SMTP_HOST` |
+| 2.5 | Upload confirmation email | ✅ Done | `upload()` + `create_manual_submission()` call `email.send_email()` |
+| 2.6 | Result published email | ✅ Done | `publish()` sends presigned URL to user |
+| 2.7 | LocalStack bucket init script | ✅ Done | `scripts/setup-local.sh` |
+| 2.8 | AWS SES (prod) | 🟡 Planned | Leave `SES_SENDER_EMAIL` empty → uses SMTP |
+| 2.9 | Per-tenant SMTP override | 🟡 Planned | Settings → email-config (Schema TD-SET-005) |
 
 ### Phase 3 — AI Analysis Integration 🟡 Planned
 **Goal:** Connect external AI API to Celery analysis pipeline.
@@ -87,18 +104,21 @@
 | Auth (login/logout/reset/change) | ✅ Complete |
 | Tenant management | ✅ Complete |
 | User/expert management | ✅ Complete |
-| Submission upload API | ✅ Complete (S3 stub) |
+| Submission upload API | ✅ Complete |
 | AI trigger API | ✅ Complete (task stub) |
-| Celery worker setup | ✅ Complete (task stub) |
+| Celery worker setup | ✅ Complete |
 | Dashboard stats | ✅ Complete |
-| S3 file storage | ❌ Not implemented |
-| Presigned URL generation | ❌ Not implemented |
-| AWS SES email | ❌ Not implemented |
-| Per-tenant SMTP | ❌ Not implemented |
-| AI API integration | ❌ Not implemented |
-| Manual input endpoint | ❌ Not implemented |
-| Alembic migrations | ❌ Not implemented |
-| Recent dashboard endpoints | ❌ Not implemented |
+| S3 file storage | ✅ Complete (LocalStack dev / AWS prod) |
+| Presigned URL generation | ✅ Complete |
+| SMTP email (dev) | ✅ Complete (MailHog) |
+| Upload confirmation email | ✅ Complete |
+| Result published email | ✅ Complete |
+| Manual input endpoint | ✅ Complete |
+| AWS SES (prod) | 🟡 Planned |
+| Per-tenant SMTP | 🟡 Planned |
+| AI API integration | 🟡 Planned |
+| Alembic migrations | 🟡 Planned |
+| Recent dashboard endpoints | 🟡 Planned |
 
 ---
 
