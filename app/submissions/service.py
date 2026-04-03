@@ -2,8 +2,8 @@ from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.submissions import repository
-from app.submissions.schemas import UpdateResultRequest
-from app.models.submission import AIStatus
+from app.submissions.schemas import ManualInputRequest, SubmissionFileResponse, SubmissionResponse, UpdateResultRequest
+from app.models.submission import AIStatus, DeliveryStatus, SubmissionType
 from app.models.user import User
 
 
@@ -100,6 +100,54 @@ def publish(db: Session, submission_id: int, file_id: int, current_user: User):
     # TODO: gửi mail cho user (Celery task)
     repository.publish_file(db, file, current_user.id, file.notes)
     return {"message": "Result published"}
+
+
+def create_manual_submission(db: Session, data: ManualInputRequest, user: User) -> SubmissionResponse:
+    # 1. Calculate display_id
+    count = repository.count_by_tenant(db, user.tenant_id)
+    display_id = f"{user.tenant.tenant_code}-{str(count + 1).zfill(3)}"
+
+    # 2. Create Submission record
+    submission = repository.create_submission(
+        db, user.tenant_id, user.id, display_id, type=SubmissionType.manual_input
+    )
+
+    # 3. Generate structured text content (Phase 1 stub — JSON as text)
+    content = {
+        "commodity_name": data.commodity_name,
+        "description": data.description,
+        "function": data.function,
+        "structure_components": data.structure_components,
+        "material_composition": data.material_composition,
+        "technical_specification": data.technical_specification,
+        "additional_notes": data.additional_notes,
+    }
+    filename = f"manual_input_{display_id}.json"
+
+    # 4. s3_key = None (Phase 1 stub — no S3 upload yet)
+    file = repository.create_file(db, submission.id, filename, s3_key=None)
+
+    # 5. SubmissionFile record already created with ai_status=not_started, delivery_status=not_sent (defaults)
+    # 6. Log email stub to console
+    import datetime, json
+    print(f"[EMAIL STUB] Confirmation email for manual submission {display_id} to user {user.email} at {datetime.datetime.now().isoformat()}")
+    print(f"[EMAIL STUB] Content preview: {json.dumps(content, ensure_ascii=False)[:200]}")
+
+    # 7. Return SubmissionResponse
+    return SubmissionResponse(
+        id=submission.id,
+        display_id=submission.display_id,
+        submitted_at=submission.submitted_at,
+        files=[
+            SubmissionFileResponse(
+                id=file.id,
+                original_filename=file.original_filename,
+                ai_status=file.ai_status,
+                delivery_status=file.delivery_status,
+                published_at=file.published_at,
+            )
+        ],
+    )
 
 
 def get_result_url(db: Session, submission_id: int, file_id: int, user_id: int):

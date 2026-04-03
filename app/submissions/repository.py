@@ -2,22 +2,22 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.models.submission import Submission, SubmissionFile, AnalysisJob, AIStatus, DeliveryStatus
+from app.models.submission import Submission, SubmissionFile, AnalysisJob, AIStatus, DeliveryStatus, SubmissionType
 
 
 def count_by_tenant(db: Session, tenant_id: int) -> int:
     return db.query(Submission).filter(Submission.tenant_id == tenant_id).count()
 
 
-def create_submission(db: Session, tenant_id: int, user_id: int, display_id: str) -> Submission:
-    submission = Submission(tenant_id=tenant_id, user_id=user_id, display_id=display_id)
+def create_submission(db: Session, tenant_id: int, user_id: int, display_id: str, type: SubmissionType = SubmissionType.file_upload) -> Submission:
+    submission = Submission(tenant_id=tenant_id, user_id=user_id, display_id=display_id, type=type)
     db.add(submission)
     db.commit()
     db.refresh(submission)
     return submission
 
 
-def create_file(db: Session, submission_id: int, filename: str, s3_key: str) -> SubmissionFile:
+def create_file(db: Session, submission_id: int, filename: str, s3_key: str | None) -> SubmissionFile:
     file = SubmissionFile(submission_id=submission_id, original_filename=filename, s3_key=s3_key)
     db.add(file)
     db.commit()

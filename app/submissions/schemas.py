@@ -26,5 +26,15 @@ class SubmissionResponse(BaseModel):
         from_attributes = True
 
 
+class ManualInputRequest(BaseModel):
+    commodity_name: str
+    description: str
+    function: str
+    structure_components: str
+    material_composition: str
+    technical_specification: str
+    additional_notes: str | None = None
+
+
 class UpdateResultRequest(BaseModel):
     notes: str | None = None

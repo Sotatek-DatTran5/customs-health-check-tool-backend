@@ -6,7 +6,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_roles
 from app.models.user import User, UserRole
 from app.submissions import service
-from app.submissions.schemas import SubmissionResponse, UpdateResultRequest
+from app.submissions.schemas import ManualInputRequest, SubmissionResponse, UpdateResultRequest
 
 router = APIRouter(tags=["submissions"])
 
@@ -22,6 +22,15 @@ def upload(
     current_user: User = Depends(get_current_user),
 ):
     return service.upload(db, files, current_user)
+
+
+@router.post("/manual", response_model=SubmissionResponse)
+def create_manual_submission(
+    payload: ManualInputRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return service.create_manual_submission(db, payload, current_user)
 
 
 @router.get("/my", response_model=list[SubmissionResponse])
