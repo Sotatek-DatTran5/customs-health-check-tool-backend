@@ -41,3 +41,7 @@ class ManualInputRequest(BaseModel):
 
 class UpdateResultRequest(BaseModel):
     notes: str | None = None
+
+
+class AnalyzeAllRequest(BaseModel):
+    file_ids: list[int] | None = None  # None = analyze all files

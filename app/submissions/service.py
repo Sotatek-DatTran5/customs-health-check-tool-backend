@@ -11,8 +11,25 @@ from app.submissions.schemas import ManualInputRequest, SubmissionFileResponse, 
 from app.models.submission import AIStatus, DeliveryStatus, Submission, SubmissionFile, SubmissionType
 from app.models.user import User
 
+ALLOWED_EXTENSIONS = {".xlsx", ".xls"}
+ALLOWED_MIME_TYPES = {
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+}
+
 
 def upload(db: Session, files: list[UploadFile], user: User) -> object:
+    for up_file in files:
+        ext = up_file.filename.rsplit(".", 1)[-1].lower() if "." in up_file.filename else ""
+        content_type = up_file.content_type or ""
+
+        if f".{ext}" not in ALLOWED_EXTENSIONS or content_type not in ALLOWED_MIME_TYPES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"File '{up_file.filename}' is not allowed. Only .xlsx and .xls files are accepted.",
+            )
+
+    count = repository.count_by_tenant(db, user.tenant_id)
     count = repository.count_by_tenant(db, user.tenant_id)
     display_id = f"{user.tenant.tenant_code}-{str(count + 1).zfill(3)}"
 

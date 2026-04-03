@@ -1,7 +1,12 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core import email
+from app.core.config import settings
 from app.core.security import hash_password
+from app.models.password_reset_token import PasswordResetToken
 from app.users import repository
 from app.users.schemas import UserCreate, UserUpdate
 from app.models.user import User
@@ -44,5 +49,41 @@ def delete(db: Session, user_id: int, tenant_id: int):
 
 def request_reset_password(db: Session, user_id: int, tenant_id: int):
     user = get_by_id(db, user_id, tenant_id)
-    # TODO: tạo reset token và gửi mail
-    pass
+
+    # Generate reset token
+    from jose import jwt
+    import secrets
+
+    token_data = {
+        "user_id": user.id,
+        "email": user.email,
+        "jti": secrets.token_urlsafe(16),
+    }
+    reset_token_str = jwt.encode(
+        token_data,
+        settings.SECRET_KEY,
+        algorithm="HS256",
+    )
+
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.PASSWORD_RESET_EXPIRE_MINUTES)
+    reset_record = PasswordResetToken(
+        user_id=user.id,
+        token=reset_token_str,
+        expires_at=expires_at,
+    )
+    db.add(reset_record)
+    db.commit()
+
+    # Send reset email
+    reset_url = f"http://{settings.BASE_DOMAIN}/auth/reset-password?token={reset_token_str}"
+    email.send_email(
+        to=user.email,
+        subject="CHC — Password Reset Request",
+        body=(
+            f"Hi {user.full_name},\n\n"
+            f"A password reset was requested for your CHC account ({user.email}).\n\n"
+            f"Click the link below to reset your password (valid for {settings.PASSWORD_RESET_EXPIRE_MINUTES} minutes):\n"
+            f"{reset_url}\n\n"
+            f"If you didn't request this, please ignore this email."
+        ),
+    )

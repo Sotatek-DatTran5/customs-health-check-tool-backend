@@ -35,8 +35,8 @@
 | 1.5.7 | `app/submissions/service.py` wired | ✅ | All TODOs replaced with real storage/email calls |
 | 1.5.8 | `app/submissions/tasks.py` wired | ✅ | `storage` imported; AI stub TODOs preserved for Phase 3 |
 
-### Phase 2 — S3 & Email Integration ✅ Phase 1.5 Done
-**Goal:** Local dev with LocalStack (S3) + MailHog (SMTP) — FE/BE interface unchanged.
+### Phase 2 — S3 & Email Integration ✅ Complete
+**Goal:** Connect file storage and email delivery.
 
 | # | Task | Status | Notes |
 |---|---|---|---|
@@ -46,9 +46,10 @@
 | 2.4 | SMTP client + MailHog (dev) / real SMTP (prod) | ✅ Done | `app/core/email.py`; host via `SMTP_HOST` |
 | 2.5 | Upload confirmation email | ✅ Done | `upload()` + `create_manual_submission()` call `email.send_email()` |
 | 2.6 | Result published email | ✅ Done | `publish()` sends presigned URL to user |
-| 2.7 | LocalStack bucket init script | ✅ Done | `scripts/setup-local.sh` |
-| 2.8 | AWS SES (prod) | 🟡 Planned | Leave `SES_SENDER_EMAIL` empty → uses SMTP |
-| 2.9 | Per-tenant SMTP override | 🟡 Planned | Settings → email-config (Schema TD-SET-005) |
+| 2.7 | Tenant admin welcome email | ✅ Done | `tenants/service.py` sends credentials on tenant creation |
+| 2.8 | Password reset email | ✅ Done | `users/service.py:request_reset_password()` |
+| 2.9 | AWS SES (prod) | 🟡 Planned | Leave `SES_SENDER_EMAIL` empty → uses SMTP |
+| 2.10 | Per-tenant SMTP override | 🟡 Planned | Settings → email-config (Schema TD-SET-005) |
 
 ### Phase 3 — AI Analysis Integration 🟡 Planned
 **Goal:** Connect external AI API to Celery analysis pipeline.
@@ -56,7 +57,7 @@
 | # | Task | Status | Notes |
 |---|---|---|---|
 | 3.1 | AI API client | 🟡 TODO | Configurable endpoint + API key |
-| 3.2 | `run_ai_analysis` Celery task | 🟡 TODO | S3 download → AI call → S3 upload |
+| 3.2 | `run_ai_analysis` Celery task | 🟡 TODO | S3 download → AI call → S3 upload → save ai_s3_key |
 | 3.3 | Job status polling endpoint | 🟡 TODO | Expert checks AI progress |
 | 3.4 | AI result file handling | 🟡 TODO | Save ai_s3_key on completion |
 | 3.5 | Error handling + expert retry | 🟡 TODO | No auto-retry |
@@ -66,20 +67,20 @@
 
 | # | Task | Status | Notes |
 |---|---|---|---|
-| 4.1 | `POST /submissions/manual` endpoint | 🟡 TODO | Create file from structured form |
+| 4.1 | `POST /submissions/manual` endpoint | ✅ Done | `router.py` + `service.py`; saves JSON to S3 |
 | 4.2 | File generation from form data | 🟡 TODO | Convert structured input to Excel |
 | 4.3 | Batch Dataset type submission | 🟡 TODO | Same flow as file_upload, type = batch_dataset |
 
-### Phase 5 — Dashboard & Admin Polish 🟡 Planned
+### Phase 5 — Dashboard & Admin Polish ✅ Complete
 **Goal:** Complete admin site backend coverage.
 
 | # | Task | Status | Notes |
 |---|---|---|---|
-| 5.1 | `GET /dashboard/recent-tenants` | 🟡 TODO | super_admin only |
-| 5.2 | `GET /dashboard/recent-users` | 🟡 TODO | Role-scoped |
-| 5.3 | `GET /dashboard/recent-submissions` | 🟡 TODO | Role-scoped |
-| 5.4 | `GET /dashboard/role-distribution` | 🟡 TODO | Counts per role |
-| 5.5 | Submission list filters | 🟡 TODO | date range, status filters |
+| 5.1 | `GET /dashboard/recent-tenants` | ✅ Done | `dashboard/router.py` |
+| 5.2 | `GET /dashboard/recent-users` | ✅ Done | Role-scoped; admin_roles enforced |
+| 5.3 | `GET /dashboard/recent-submissions` | ✅ Done | Role-scoped |
+| 5.4 | `GET /dashboard/role-distribution` | ✅ Done | Counts per role |
+| 5.5 | Submission list filters | ✅ Done | date_from, date_to, ai_status, delivery_status, search |
 
 ### Phase 6 — Production Hardening 🟡 Planned
 **Goal:** Production-ready deployment and observability.
@@ -88,10 +89,10 @@
 |---|---|---|---|
 | 6.1 | Alembic migrations setup | 🟡 TODO | |
 | 6.2 | PostgreSQL advisory lock for display_id | 🟡 TODO | Avoid race condition on sequence |
-| 6.3 | Password reset token hashing | 🟡 TODO | Currently plain text |
+| 6.3 | Password reset token hashing | 🟡 TODO | Token stored as plain JWT; add hashing before Phase 6 |
 | 6.4 | `email_logs` table + logging | 🟡 TODO | Track delivery status |
 | 6.5 | `system_config` table | 🟡 TODO | Dynamic configuration |
-| 6.6 | Health check endpoint | 🟡 TODO | `/health` for load balancer |
+| 6.6 | Health check endpoint | ✅ Done | `GET /health` in `app/main.py`; CORS middleware added |
 | 6.7 | Rate limiting | 🟡 TODO | Upload, auth endpoints |
 | 6.8 | CI/CD pipeline | 🟡 TODO | GitHub Actions |
 
@@ -107,18 +108,20 @@
 | Submission upload API | ✅ Complete |
 | AI trigger API | ✅ Complete (task stub) |
 | Celery worker setup | ✅ Complete |
-| Dashboard stats | ✅ Complete |
+| Dashboard stats + recent endpoints | ✅ Complete |
 | S3 file storage | ✅ Complete (LocalStack dev / AWS prod) |
 | Presigned URL generation | ✅ Complete |
 | SMTP email (dev) | ✅ Complete (MailHog) |
 | Upload confirmation email | ✅ Complete |
 | Result published email | ✅ Complete |
+| Tenant welcome email | ✅ Complete |
+| Password reset email | ✅ Complete |
 | Manual input endpoint | ✅ Complete |
+| `/health` endpoint + CORS | ✅ Complete |
 | AWS SES (prod) | 🟡 Planned |
 | Per-tenant SMTP | 🟡 Planned |
 | AI API integration | 🟡 Planned |
 | Alembic migrations | 🟡 Planned |
-| Recent dashboard endpoints | 🟡 Planned |
 
 ---
 

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -9,7 +9,7 @@ from app.core.dependencies import get_current_user, require_roles
 from app.models.user import User, UserRole
 from app.models.submission import AIStatus, DeliveryStatus
 from app.submissions import service
-from app.submissions.schemas import ManualInputRequest, SubmissionResponse, UpdateResultRequest
+from app.submissions.schemas import AnalyzeAllRequest, ManualInputRequest, SubmissionResponse, UpdateResultRequest
 
 router = APIRouter(tags=["submissions"])
 
@@ -85,10 +85,18 @@ def trigger_ai(submission_id: int, file_id: int, db: Session = Depends(get_db), 
 
 
 @router.post("/{submission_id}/analyze-all")
-def analyze_all(submission_id: int, db: Session = Depends(get_db), current_user: User = Depends(expert_or_admin)):
+def analyze_all(
+    submission_id: int,
+    payload: AnalyzeAllRequest | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(expert_or_admin),
+):
     submission = service.get_submission(db, submission_id, current_user.tenant_id)
+    target_ids = payload.file_ids if payload and payload.file_ids else None
     results = []
     for file in submission.files:
+        if target_ids is not None and file.id not in target_ids:
+            continue
         result = service.trigger_ai(db, submission_id, file.id, current_user)
         results.append(result)
     return results
