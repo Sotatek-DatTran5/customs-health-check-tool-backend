@@ -12,6 +12,9 @@ class DashboardStats(BaseModel):
     records_processing: int
     records_failed: int
 
+    class Config:
+        from_attributes = True
+
 
 class RecentTenant(BaseModel):
     id: int
@@ -29,6 +32,9 @@ class RecentUser(BaseModel):
     email: str
     role: str
     created_at: datetime
+
+    # NOTE: role returned as str (role.value) for simplicity in serialization
+    # Compare with UserResponse in app/users/schemas.py which uses UserRole enum directly
 
     class Config:
         from_attributes = True
