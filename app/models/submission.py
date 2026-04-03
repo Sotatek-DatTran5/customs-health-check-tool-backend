@@ -49,7 +49,7 @@ class SubmissionFile(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     submission_id: Mapped[int] = mapped_column(ForeignKey("submissions.id"))
     original_filename: Mapped[str] = mapped_column(String(255))
-    s3_key: Mapped[str] = mapped_column(String(500))
+    s3_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
     ai_status: Mapped[AIStatus] = mapped_column(Enum(AIStatus), default=AIStatus.not_started)
     ai_s3_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
     expert_s3_key: Mapped[str | None] = mapped_column(String(500), nullable=True)

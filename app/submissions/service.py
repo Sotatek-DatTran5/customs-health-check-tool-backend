@@ -1,3 +1,6 @@
+import json
+from datetime import datetime
+
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
@@ -56,7 +59,7 @@ def trigger_ai(db: Session, submission_id: int, file_id: int, current_user: User
     return {"message": "AI analysis started", "task_id": task.id}
 
 
-def download_file(submission_id: int, file_id: int, tenant_id: int, db: Session):
+def download_file(submission_id: int, file_id: int, tenant_id: int, db: Session) -> None:
     submission = get_submission(db, submission_id, tenant_id)
     file = repository.get_file_by_id(db, file_id)
 
@@ -129,8 +132,7 @@ def create_manual_submission(db: Session, data: ManualInputRequest, user: User) 
 
     # 5. SubmissionFile record already created with ai_status=not_started, delivery_status=not_sent (defaults)
     # 6. Log email stub to console
-    import datetime, json
-    print(f"[EMAIL STUB] Confirmation email for manual submission {display_id} to user {user.email} at {datetime.datetime.now().isoformat()}")
+    print(f"[EMAIL STUB] Confirmation email for manual submission {display_id} to user {user.email} at {datetime.now().isoformat()}")
     print(f"[EMAIL STUB] Content preview: {json.dumps(content, ensure_ascii=False)[:200]}")
 
     # 7. Return SubmissionResponse
