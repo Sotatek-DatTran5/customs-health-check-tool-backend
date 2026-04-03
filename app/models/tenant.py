@@ -20,3 +20,6 @@ class Tenant(Base):
 
     users: Mapped[list["User"]] = relationship("User", back_populates="tenant")
     submissions: Mapped[list["Submission"]] = relationship("Submission", back_populates="tenant")
+    email_config: Mapped["TenantEmailConfig | None"] = relationship(
+        "TenantEmailConfig", back_populates="tenant", uselist=False
+    )
