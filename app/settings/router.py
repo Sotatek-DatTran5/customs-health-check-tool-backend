@@ -5,7 +5,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_roles
 from app.models.user import User, UserRole
 from app.settings.schemas import EmailConfigResponse, EmailConfigUpdate, ProfileResponse
-from app.settings.service import get_email_config, upsert_email_config
+from app.settings.service import get_email_config, get_email_config_masked, upsert_email_config
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -27,7 +27,7 @@ def get_email_config_handler(
     db: Session = Depends(get_db),
     current_user: User = Depends(tenant_admin_only),
 ):
-    config = get_email_config(db, current_user.tenant_id)
+    config = get_email_config_masked(db, current_user.tenant_id)
     return config
 
 
