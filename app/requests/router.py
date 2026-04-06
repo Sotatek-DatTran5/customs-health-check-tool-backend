@@ -112,14 +112,9 @@ def list_requests(
     """F-A03: Admin/Expert views request list."""
     if current_user.role == UserRole.expert:
         return service.get_expert_requests(db, current_user.id)
-    tenant_id = current_user.tenant_id
-    if current_user.role == UserRole.super_admin:
-        tenant_id = None  # cross-tenant
+    tenant_id = None if current_user.role == UserRole.super_admin else current_user.tenant_id
     filters = {"status": status, "type": type, "search": search, "expert_id": expert_id}
-    if tenant_id:
-        return service.get_tenant_requests(db, tenant_id, filters)
-    # Super admin: all requests (simplified)
-    return service.get_tenant_requests(db, 0, filters) if not tenant_id else []
+    return service.get_tenant_requests(db, tenant_id, filters)
 
 
 @router.get("/{request_id}", response_model=RequestResponse)

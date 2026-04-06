@@ -152,8 +152,10 @@ def get_result_download_url(db: Session, request_id: int, file_id: int, user: Us
 
 # ── Admin actions ──
 
-def get_tenant_requests(db: Session, tenant_id: int, filters: dict | None = None) -> list[Request]:
-    query = db.query(Request).filter(Request.tenant_id == tenant_id)
+def get_tenant_requests(db: Session, tenant_id: int | None, filters: dict | None = None) -> list[Request]:
+    query = db.query(Request)
+    if tenant_id:
+        query = query.filter(Request.tenant_id == tenant_id)
     if filters:
         if filters.get("status"):
             query = query.filter(Request.status == filters["status"])
