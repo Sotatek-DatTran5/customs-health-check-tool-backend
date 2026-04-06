@@ -50,7 +50,7 @@ def get_recent_users(db: Session, tenant_id: int | None, limit: int = 10) -> lis
     return query.order_by(User.created_at.desc()).limit(limit).all()
 
 
-def get_recent_submissions(db: Session, tenant_id: int | None, limit: int = 10) -> list[dict]:
+def get_recent_requests(db: Session, tenant_id: int | None, limit: int = 10) -> list[dict]:
     query = db.query(Request).join(User, Request.user_id == User.id)
     if tenant_id:
         query = query.filter(Request.tenant_id == tenant_id)

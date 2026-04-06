@@ -6,6 +6,12 @@ services:
       - "8329:8329"
     env_file:
       - .env
+    environment:
+      DATABASE_URL: postgresql://user:password@postgres:5432/chc
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      SMTP_HOST: mailhog
+      AWS_ENDPOINT_URL: http://localstack:4566
     depends_on:
       postgres:
         condition: service_healthy
@@ -24,6 +30,12 @@ services:
     command: uv run celery -A worker.celery_app worker --loglevel=info
     env_file:
       - .env
+    environment:
+      DATABASE_URL: postgresql://user:password@postgres:5432/chc
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      SMTP_HOST: mailhog
+      AWS_ENDPOINT_URL: http://localstack:4566
     depends_on:
       postgres:
         condition: service_healthy

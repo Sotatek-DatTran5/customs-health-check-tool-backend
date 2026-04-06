@@ -4,18 +4,58 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Context
 
-**CHC Backend** — Customs Health Check Backend (Python / FastAPI)
+**CHC Backend** — E-Tariff Classification & Custom Health Check Platform (Python / FastAPI)
 
-- **Tech Stack**: Python / FastAPI, PostgreSQL, Celery + Redis, AWS S3, AWS SES, JWT + Redis blacklist
+- **Tech Stack**: Python 3.11+ / FastAPI, PostgreSQL, Celery + Redis, AWS S3, SMTP email, JWT + Redis blacklist
 - **Multi-tenant**: Wildcard DNS (*.chc.com), subdomain-based tenant isolation
 - **Actors**: super_admin, tenant_admin, expert, user
-- **Modules**: E-Customs Health Check (file upload), Batch Dataset, Manual Input, Admin site (dashboard, tenants, users, CHC, settings)
-- **Spec file**: `miêu tả dự án.txt` (source of truth for business logic)
-- **Git root**: `./` (same as this file)
+- **Modules**: CHC (5 modules), E-Tariff (Manual + Batch), Admin Portal (dashboard, tenants, users, experts, requests, settings)
+- **BRD**: `BRD_E-Tariff_CHC_v2.docx.pdf` (business requirements, acceptance criteria)
+- **Spec file**: `miêu tả dự án.txt` (detailed business logic in Vietnamese)
+- **Git root**: `./`
 
-## Role & Responsibilities
+## Architecture
 
-Your role is to analyze user requirements, delegate tasks to appropriate sub-agents, and ensure cohesive delivery of features that meet specifications and architectural standards.
+```
+app/
+├── core/           # Config, DB, security, middleware, email, storage
+├── models/         # SQLAlchemy models (tenant, user, request, request_file)
+├── auth/           # Login, logout, refresh token, password reset/change
+├── requests/       # CHC orders, E-Tariff, assign, approve, cancel
+├── users/          # User CRUD, onboarding, locale
+├── tenants/        # Tenant CRUD, branding, expert management
+├── dashboard/      # Stats, recent activity
+└── settings/       # Profile, email config
+```
+
+## Key Business Flows
+
+- **Request lifecycle**: Pending → Processing → Completed → Delivered → Cancelled
+- **CHC modules**: item_code_generator, tariff_classification, customs_valuation, non_tariff_measures, exim_statistics
+- **E-Tariff**: Manual mode (form input) + Batch mode (Excel upload), daily limit per tenant
+
+## Commands
+
+```bash
+# Setup
+./scripts/setup.sh          # Install deps, start docker, migrate, seed
+
+# Run
+./scripts/start.sh          # Start all services
+./scripts/stop.sh           # Stop all services
+./scripts/status.sh         # Check service status
+
+# Dev (without Docker for app)
+uv run uvicorn app.main:app --reload --port 8329
+uv run celery -A worker.celery_app worker --loglevel=info
+
+# Migrations
+uv run alembic upgrade head
+uv run alembic revision --autogenerate -m "description"
+
+# Seed
+uv run python scripts/seed.py
+```
 
 ## Workflows
 
@@ -23,13 +63,9 @@ Your role is to analyze user requirements, delegate tasks to appropriate sub-age
 - Development rules: `./.claude/rules/development-rules.md`
 - Orchestration protocols: `./.claude/rules/orchestration-protocol.md`
 - Documentation management: `./.claude/rules/documentation-management.md`
-- And other workflows: `./.claude/rules/*`
 
-**IMPORTANT:** Analyze the skills catalog and activate the skills that are needed for the task during the process.
-**IMPORTANT:** You must follow strictly the development rules in `./.claude/rules/development-rules.md` file.
 **IMPORTANT:** Before you plan or proceed any implementation, always read `./miêu tả dự án.txt` to get project context.
-**IMPORTANT:** Sacrifice grammar for the sake of concision when writing reports.
-**IMPORTANT:** In reports, list any unresolved questions at the end, if any.
+**IMPORTANT:** Follow the development rules in `./.claude/rules/development-rules.md`.
 
 ## Hook Response Protocol
 
@@ -37,64 +73,14 @@ Your role is to analyze user requirements, delegate tasks to appropriate sub-age
 
 When a tool call is blocked by the privacy-block hook, the output contains a JSON marker between `@@PRIVACY_PROMPT_START@@` and `@@PRIVACY_PROMPT_END@@`. **You MUST use the `AskUserQuestion` tool** to get proper user approval.
 
-**Required Flow:**
-
-1. Parse the JSON from the hook output
-2. Use `AskUserQuestion` with the question data from the JSON
-3. Based on user's selection:
-   - **"Yes, approve access"** → Use `bash cat "filepath"` to read the file (bash is auto-approved)
-   - **"No, skip this file"** → Continue without accessing the file
-
-**Example AskUserQuestion call:**
-```json
-{
-  "questions": [{
-    "question": "I need to read \".env\" which may contain sensitive data. Do you approve?",
-    "header": "File Access",
-    "options": [
-      { "label": "Yes, approve access", "description": "Allow reading .env this time" },
-      { "label": "No, skip this file", "description": "Continue without accessing this file" }
-    ],
-    "multiSelect": false
-  }]
-}
-```
-
-**IMPORTANT:** Always ask the user via `AskUserQuestion` first. Never try to work around the privacy block without explicit user approval.
-
 ## Python Scripts (Skills)
 
 When running Python scripts from `.claude/skills/`, use the venv Python interpreter:
 - **Linux/macOS:** `.claude/skills/.venv/bin/python3 scripts/xxx.py`
-- **Windows:** `.claude\skills\.venv\Scripts\python.exe scripts\xxx.py`
 
-This ensures packages installed by `install.sh` (google-genai, pypdf, etc.) are available.
+## Code Standards
 
-**IMPORTANT:** When scripts of skills failed, don't stop, try to fix them directly.
-
-## [IMPORTANT] Consider Modularization
-- If a code file exceeds 200 lines of code, consider modularizing it
-- Check existing modules before creating new
-- Analyze logical separation boundaries (functions, classes, concerns)
-- Use kebab-case naming with long descriptive names, it's fine if the file name is long because this ensures file names are self-documenting for LLM tools (Grep, Glob, Search)
-- Write descriptive code comments
-- After modularization, continue with main task
-- When not to modularize: Markdown files, plain text files, bash scripts, configuration files, environment variables files, etc.
-
-## Documentation Management
-
-We keep all important docs in `./docs` folder and keep updating them, structure like below:
-
-```
-./docs
-├── project-overview-pdr.md
-├── code-standards.md
-├── codebase-summary.md
-├── design-system/            # Design principles, tokens, catalog, themes
-├── testcases/                # Test cases per module, summary, exports
-├── deployment-guide.md
-├── system-architecture.md
-└── project-roadmap.md
-```
-
-**IMPORTANT:** *MUST READ* and *MUST COMPLY* all *INSTRUCTIONS* in project `./CLAUDE.md`, especially *WORKFLOWS* section is *CRITICALLY IMPORTANT*, this rule is *MANDATORY. NON-NEGOTIABLE. NO EXCEPTIONS. MUST REMEMBER AT ALL TIMES!!!*
+- Keep files under 200 lines; modularize if exceeded
+- Use kebab-case file names (descriptive for LLM tools)
+- Follow patterns in `./docs/code-standards.md`
+- Docs kept in `./docs/` — update after significant changes

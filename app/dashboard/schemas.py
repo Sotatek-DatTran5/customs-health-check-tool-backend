@@ -49,7 +49,7 @@ class RecentUser(BaseModel):
         from_attributes = True
 
 
-class RecentSubmission(BaseModel):
+class RecentRequest(BaseModel):
     id: int
     display_id: str
     type: str

@@ -5,7 +5,7 @@ from app.core.database import get_db
 from app.core.dependencies import require_roles
 from app.models.user import User, UserRole
 from app.dashboard import service
-from app.dashboard.schemas import DashboardStats, RecentTenant, RecentUser, RecentSubmission, RoleDistribution
+from app.dashboard.schemas import DashboardStats, RecentTenant, RecentUser, RecentRequest, RoleDistribution
 
 router = APIRouter(tags=["dashboard"])
 
@@ -38,14 +38,14 @@ def get_recent_users_handler(
     return service.get_recent_users(db, tenant_id, limit)
 
 
-@router.get("/recent-submissions", response_model=list[RecentSubmission])
-def get_recent_submissions_handler(
+@router.get("/recent-requests", response_model=list[RecentRequest])
+def get_recent_requests_handler(
     db: Session = Depends(get_db),
     current_user: User = Depends(allowed_roles),
     limit: int = Query(default=10, ge=1, le=50),
 ):
     tenant_id = None if current_user.role == UserRole.super_admin else current_user.tenant_id
-    return service.get_recent_submissions(db, tenant_id, limit)
+    return service.get_recent_requests(db, tenant_id, limit)
 
 
 @router.get("/role-distribution", response_model=RoleDistribution)
