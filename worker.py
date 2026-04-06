@@ -6,7 +6,7 @@ celery_app = Celery(
     "chc",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.REDIS_URL,
-    include=["app.submissions.tasks"],
+    include=["app.requests.tasks"],
 )
 
 celery_app.conf.update(

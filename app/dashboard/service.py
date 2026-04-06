@@ -1,45 +1,49 @@
+from datetime import datetime, timezone, timedelta
+
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.user import User, UserRole
 from app.models.tenant import Tenant
-from app.models.submission import Submission, SubmissionFile, AIStatus
+from app.models.request import Request, RequestStatus
 
 
 def get_stats(db: Session, current_user: User) -> dict:
     stats = {}
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = today_start - timedelta(days=today_start.weekday())
+    month_start = today_start.replace(day=1)
 
     if current_user.role == UserRole.super_admin:
         stats["total_tenants"] = db.query(Tenant).count()
         stats["active_tenants"] = db.query(Tenant).filter(Tenant.is_active == True).count()
-        stats["total_users"] = db.query(User).filter(User.role.in_([UserRole.user, UserRole.expert, UserRole.tenant_admin])).count()
-        stats["total_records"] = db.query(SubmissionFile).count()
+        stats["total_users"] = db.query(User).filter(User.role != UserRole.super_admin).count()
+        base = db.query(Request)
     else:
-        # tenant_admin và expert chỉ thấy trong tenant
         tenant_id = current_user.tenant_id
         stats["total_users"] = db.query(User).filter(User.tenant_id == tenant_id).count()
-        stats["total_records"] = db.query(SubmissionFile).join(Submission).filter(Submission.tenant_id == tenant_id).count()
+        base = db.query(Request).filter(Request.tenant_id == tenant_id)
 
-    # Breakdown theo AI status (cho tenant_admin và expert)
-    if current_user.role != UserRole.super_admin:
-        tenant_id = current_user.tenant_id
-        base = db.query(SubmissionFile).join(Submission).filter(Submission.tenant_id == tenant_id)
-        stats["records_completed"] = base.filter(SubmissionFile.ai_status == AIStatus.completed).count()
-        stats["records_processing"] = base.filter(SubmissionFile.ai_status == AIStatus.running).count()
-        stats["records_failed"] = base.filter(SubmissionFile.ai_status == AIStatus.failed).count()
-    else:
-        stats["records_completed"] = db.query(SubmissionFile).filter(SubmissionFile.ai_status == AIStatus.completed).count()
-        stats["records_processing"] = db.query(SubmissionFile).filter(SubmissionFile.ai_status == AIStatus.running).count()
-        stats["records_failed"] = db.query(SubmissionFile).filter(SubmissionFile.ai_status == AIStatus.failed).count()
+    stats["total_requests"] = base.count()
+    stats["requests_pending"] = base.filter(Request.status == RequestStatus.pending).count()
+    stats["requests_processing"] = base.filter(Request.status == RequestStatus.processing).count()
+    stats["requests_completed"] = base.filter(Request.status == RequestStatus.completed).count()
+    stats["requests_delivered"] = base.filter(Request.status == RequestStatus.delivered).count()
+    stats["requests_cancelled"] = base.filter(Request.status == RequestStatus.cancelled).count()
+
+    stats["requests_today"] = base.filter(Request.submitted_at >= today_start).count()
+    stats["requests_this_week"] = base.filter(Request.submitted_at >= week_start).count()
+    stats["requests_this_month"] = base.filter(Request.submitted_at >= month_start).count()
 
     return stats
 
 
-def get_recent_tenants(db: Session, limit: int = 10) -> list["Tenant"]:
+def get_recent_tenants(db: Session, limit: int = 10) -> list[Tenant]:
     return db.query(Tenant).order_by(Tenant.created_at.desc()).limit(limit).all()
 
 
-def get_recent_users(db: Session, tenant_id: int | None, limit: int = 10) -> list["User"]:
+def get_recent_users(db: Session, tenant_id: int | None, limit: int = 10) -> list[User]:
     query = db.query(User)
     if tenant_id:
         query = query.filter(User.tenant_id == tenant_id)
@@ -47,19 +51,20 @@ def get_recent_users(db: Session, tenant_id: int | None, limit: int = 10) -> lis
 
 
 def get_recent_submissions(db: Session, tenant_id: int | None, limit: int = 10) -> list[dict]:
-    query = db.query(Submission).join(User)
+    query = db.query(Request).join(User, Request.user_id == User.id)
     if tenant_id:
-        query = query.filter(Submission.tenant_id == tenant_id)
-    results = query.order_by(Submission.submitted_at.desc()).limit(limit).all()
+        query = query.filter(Request.tenant_id == tenant_id)
+    results = query.order_by(Request.submitted_at.desc()).limit(limit).all()
     return [
         {
-            "id": s.id,
-            "display_id": s.display_id,
-            "type": s.type.value,
-            "submitted_at": s.submitted_at,
-            "uploaded_by": s.user.full_name,
+            "id": r.id,
+            "display_id": r.display_id,
+            "type": r.type.value,
+            "status": r.status.value,
+            "submitted_at": r.submitted_at,
+            "uploaded_by": r.user.full_name,
         }
-        for s in results
+        for r in results
     ]
 
 

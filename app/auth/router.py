@@ -6,7 +6,7 @@ from app.core.dependencies import get_current_user
 from app.core.security import blacklist_token
 from app.core.config import settings
 from app.auth import service
-from app.auth.schemas import LoginRequest, TokenResponse, ResetPasswordRequest, ChangePasswordRequest
+from app.auth.schemas import LoginRequest, TokenResponse, RefreshTokenRequest, ResetPasswordRequest, ChangePasswordRequest
 from app.models.user import User
 
 router = APIRouter(tags=["auth"])
@@ -14,8 +14,14 @@ router = APIRouter(tags=["auth"])
 
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
-    token = service.login(db, payload)
-    return TokenResponse(access_token=token)
+    result = service.login(db, payload)
+    return TokenResponse(**result)
+
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh_token(payload: RefreshTokenRequest, db: Session = Depends(get_db)):
+    result = service.refresh_access_token(db, payload.refresh_token)
+    return TokenResponse(access_token=result["access_token"])
 
 
 @router.post("/logout")

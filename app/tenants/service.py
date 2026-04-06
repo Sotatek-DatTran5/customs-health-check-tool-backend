@@ -1,10 +1,11 @@
 import secrets
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
-from app.core import email
+from app.core import storage
 from app.core.config import settings
+from app.core.email_service import send_welcome_email
 from app.core.security import hash_password
 from app.models.user import User, UserRole
 from app.tenants import repository as tenant_repo
@@ -18,15 +19,14 @@ def get_all(db: Session):
 def get_by_id(db: Session, tenant_id: int):
     tenant = tenant_repo.get_by_id(db, tenant_id)
     if not tenant:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Tenant not found")
     return tenant
 
 
 def create(db: Session, payload: TenantCreate):
     if tenant_repo.get_by_code(db, payload.tenant_code):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tenant code already exists")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Tenant code already exists")
 
-    # 1. Create tenant
     tenant = tenant_repo.create(
         db,
         name=payload.name,
@@ -34,9 +34,12 @@ def create(db: Session, payload: TenantCreate):
         subdomain=payload.tenant_code.lower(),
         description=payload.description,
         is_active=payload.is_active,
+        primary_color=payload.primary_color,
+        display_name=payload.display_name or payload.name,
+        etariff_daily_limit=payload.etariff_daily_limit,
     )
 
-    # 2. Create tenant_admin user
+    # Create tenant_admin
     random_password = secrets.token_urlsafe(12)
     admin = User(
         tenant_id=tenant.id,
@@ -49,20 +52,7 @@ def create(db: Session, payload: TenantCreate):
     db.commit()
     db.refresh(admin)
 
-    # 3. Send welcome email with credentials
-    email.send_email(
-        to=admin.email,
-        subject=f"Welcome to CHC — Tenant {tenant.name}",
-        body=(
-            f"Your CHC tenant '{tenant.name}' has been created.\n\n"
-            f"Admin account:\n"
-            f"  Email:    {admin.email}\n"
-            f"  Password: {random_password}\n\n"
-            f"Login at: http://{settings.ADMIN_DOMAIN}/auth/login\n"
-            f"Change your password at: http://{settings.ADMIN_DOMAIN}/auth/change-password"
-        ),
-    )
-
+    send_welcome_email(admin, tenant.name, random_password)
     return tenant
 
 
@@ -74,3 +64,44 @@ def update(db: Session, tenant_id: int, payload: TenantUpdate):
 def delete(db: Session, tenant_id: int):
     tenant = get_by_id(db, tenant_id)
     tenant_repo.soft_delete(db, tenant)
+
+
+def upload_logo(db: Session, tenant_id: int, logo_file: UploadFile):
+    """Upload tenant logo to S3."""
+    tenant = get_by_id(db, tenant_id)
+    s3_key = f"tenants/{tenant_id}/logo/{logo_file.filename}"
+    content = logo_file.file.read()
+    storage.upload_file(s3_key, content, logo_file.content_type or "image/png")
+    tenant.logo_s3_key = s3_key
+    db.commit()
+    db.refresh(tenant)
+    return tenant
+
+
+# ── Expert management (BRD F-A05) ──
+
+def get_experts(db: Session) -> list[User]:
+    """Get all experts (cross-tenant)."""
+    return db.query(User).filter(User.role == UserRole.expert, User.is_active == True).all()
+
+
+def create_expert(db: Session, email: str, full_name: str) -> User:
+    """Create expert (no tenant — cross-tenant access)."""
+    existing = db.query(User).filter(User.email == email).first()
+    if existing:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Email already exists")
+
+    random_password = secrets.token_urlsafe(12)
+    expert = User(
+        tenant_id=None,
+        email=email,
+        full_name=full_name,
+        password_hash=hash_password(random_password),
+        role=UserRole.expert,
+    )
+    db.add(expert)
+    db.commit()
+    db.refresh(expert)
+
+    send_welcome_email(expert, "CHC Platform", random_password)
+    return expert

@@ -3,44 +3,55 @@ set -e
 
 echo "=== CHC Backend Setup ==="
 
-# 1. Tạo file .env nếu chưa có
+# 1. Create .env if not exists
 if [ ! -f .env ]; then
     cp .env.example .env
-    echo "[OK] Tạo file .env từ .env.example — nhớ điền các giá trị thật vào"
+    echo "[OK] Created .env from .env.example"
 else
-    echo "[SKIP] File .env đã tồn tại"
+    echo "[SKIP] .env already exists"
 fi
 
-# 2. Cài dependencies bằng uv
+# 2. Install dependencies
 echo ""
-echo "--- Cài dependencies ---"
+echo "--- Installing dependencies ---"
 uv sync
 
-# 3. Build Docker images
+# 3. Start infrastructure services
 echo ""
-echo "--- Build Docker images ---"
-docker compose build
-
-# 4. Khởi động infrastructure services trước
-echo ""
-echo "--- Khởi động postgres, redis, localstack, mailhog ---"
+echo "--- Starting postgres, redis, localstack, mailhog ---"
 docker compose up -d postgres redis localstack mailhog
 
-# 5. Chờ postgres sẵn sàng
-echo "--- Chờ postgres khởi động..."
-sleep 5
+# 4. Wait for postgres
+echo "--- Waiting for postgres..."
+for i in $(seq 1 30); do
+    if docker compose exec postgres pg_isready -U user -d chc > /dev/null 2>&1; then
+        echo "Postgres is ready"
+        break
+    fi
+    echo "  ... waiting ($i/30)"
+    sleep 2
+done
 
-# 6. Chạy migration
+# 5. Run migrations (create tables)
 echo ""
-echo "--- Chạy Alembic migration ---"
-uv run alembic upgrade head
+echo "--- Running database migrations ---"
+uv run alembic upgrade head 2>/dev/null || echo "[INFO] No migrations found, using create_all fallback"
 
-# 7. Init LocalStack bucket
+# 6. Seed super admin
+echo ""
+echo "--- Seeding super admin ---"
+uv run python scripts/seed.py
+
+# 7. Init LocalStack S3 bucket
 echo ""
 echo "--- Init LocalStack S3 bucket ---"
 ./scripts/setup-local.sh
 
 echo ""
-echo "=== Setup hoàn tất ==="
-echo "Chạy ./scripts/start.sh để khởi động app + worker"
-echo "MailHog UI: http://localhost:8025"
+echo "=== Setup complete ==="
+echo ""
+echo "Start the app:  ./scripts/start.sh"
+echo "API docs:       http://localhost:8329/docs"
+echo "MailHog UI:     http://localhost:8025"
+echo ""
+echo "Super Admin:    admin@chc.com / Admin@123"
