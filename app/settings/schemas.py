@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class ProfileResponse(BaseModel):
@@ -17,8 +17,7 @@ class ProfileResponse(BaseModel):
     company_type: str | None = None
     is_first_login: bool = False
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ProfileUpdate(BaseModel):
@@ -43,8 +42,7 @@ class EmailConfigResponse(BaseModel):
     smtp_password: str
     is_enabled: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EmailConfigUpdate(BaseModel):

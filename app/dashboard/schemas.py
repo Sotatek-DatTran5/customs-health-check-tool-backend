@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class DashboardStats(BaseModel):
@@ -23,8 +23,7 @@ class DashboardStats(BaseModel):
     requests_this_week: int = 0
     requests_this_month: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RecentTenant(BaseModel):
@@ -34,8 +33,7 @@ class RecentTenant(BaseModel):
     is_active: bool
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RecentUser(BaseModel):
@@ -45,8 +43,7 @@ class RecentUser(BaseModel):
     role: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RecentRequest(BaseModel):
@@ -57,8 +54,7 @@ class RecentRequest(BaseModel):
     submitted_at: datetime
     uploaded_by: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RoleDistribution(BaseModel):
@@ -67,5 +63,4 @@ class RoleDistribution(BaseModel):
     expert: int = 0
     user: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.models.request import CHCModule, RequestStatus, RequestType
 
@@ -18,8 +18,7 @@ class RequestFileResponse(BaseModel):
     notes: str | None = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RequestResponse(BaseModel):
@@ -39,8 +38,7 @@ class RequestResponse(BaseModel):
     user_name: str | None = None
     user_email: str | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Create schemas ──
