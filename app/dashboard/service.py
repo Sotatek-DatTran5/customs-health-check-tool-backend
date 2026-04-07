@@ -20,6 +20,9 @@ def get_stats(db: Session, current_user: User) -> dict:
         stats["active_tenants"] = db.query(Tenant).filter(Tenant.is_active == True).count()
         stats["total_users"] = db.query(User).filter(User.role != UserRole.super_admin).count()
         base = db.query(Request)
+    elif current_user.role == UserRole.user:
+        # BRD F-U02: User sees personal stats only
+        base = db.query(Request).filter(Request.user_id == current_user.id)
     else:
         tenant_id = current_user.tenant_id
         stats["total_users"] = db.query(User).filter(User.tenant_id == tenant_id).count()

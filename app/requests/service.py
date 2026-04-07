@@ -86,6 +86,7 @@ def create_manual_etariff(db: Session, data: CreateManualETariffRequest, user: U
     repository.create_file(db, req.id, filename, s3_key, len(content_bytes))
 
     send_request_confirmation(user, req)
+    _notify_admins_new_request(db, user.tenant_id, req)
     return req
 
 
@@ -109,6 +110,7 @@ def create_batch_etariff(db: Session, files: list[UploadFile], user: User) -> Re
         repository.create_file(db, req.id, up_file.filename, s3_key, file_size)
 
     send_request_confirmation(user, req)
+    _notify_admins_new_request(db, user.tenant_id, req)
     return req
 
 

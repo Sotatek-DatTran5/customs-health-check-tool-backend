@@ -18,6 +18,8 @@ router = APIRouter()
 
 admin_or_expert = require_roles(UserRole.tenant_admin, UserRole.expert, UserRole.super_admin)
 admin_only = require_roles(UserRole.tenant_admin, UserRole.super_admin)
+expert_only = require_roles(UserRole.expert)
+user_only = require_roles(UserRole.user)
 
 USER_TAG = "User Site — Requests"
 ADMIN_TAG = "Admin Site — Requests"
@@ -161,7 +163,7 @@ def upload_result(
     pdf_file: UploadFile | None = File(None),
     notes: str | None = Form(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(admin_or_expert),
+    current_user: User = Depends(expert_only),
 ):
     """F-A03: Expert uploads result (Excel + PDF) → status=Completed."""
     return service.upload_result(db, request_id, file_id, excel_file, pdf_file, notes, current_user)

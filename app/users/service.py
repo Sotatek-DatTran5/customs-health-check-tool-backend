@@ -103,6 +103,39 @@ def update_locale(db: Session, current_user: User, locale: str) -> User:
     return current_user
 
 
+# ── F-A07: Admin management (Super Admin) ──
+
+def get_admins_for_tenant(db: Session, tenant_id: int) -> list[User]:
+    """List all tenant_admin users for a specific tenant."""
+    return db.query(User).filter(
+        User.tenant_id == tenant_id, User.role == UserRole.tenant_admin
+    ).all()
+
+
+def create_admin(db: Session, tenant_id: int, admin_email: str, full_name: str) -> User:
+    """BRD F-A07 — Super Admin creates admin for a tenant."""
+    if repository.get_by_email(db, admin_email):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Email already exists")
+
+    # Verify tenant exists
+    from app.models.tenant import Tenant
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Tenant not found")
+
+    password = _generate_password()
+    admin = repository.create(
+        db,
+        email=admin_email,
+        full_name=full_name,
+        password_hash=hash_password(password),
+        role=UserRole.tenant_admin,
+        tenant_id=tenant_id,
+    )
+    send_welcome_email(admin, tenant.name, password)
+    return admin
+
+
 def request_reset_password(db: Session, user_id: int, tenant_id: int):
     user = get_by_id(db, user_id, tenant_id)
 

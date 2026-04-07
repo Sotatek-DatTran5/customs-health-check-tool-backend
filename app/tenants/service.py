@@ -1,5 +1,3 @@
-import secrets
-
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
@@ -8,6 +6,7 @@ from app.core.config import settings
 from app.core.email_service import send_welcome_email
 from app.core.security import hash_password
 from app.models.user import User, UserRole
+from app.users.service import _generate_password
 from app.tenants import repository as tenant_repo
 from app.tenants.schemas import TenantCreate, TenantUpdate
 
@@ -40,7 +39,7 @@ def create(db: Session, payload: TenantCreate):
     )
 
     # Create tenant_admin
-    random_password = secrets.token_urlsafe(12)
+    random_password = _generate_password()
     admin = User(
         tenant_id=tenant.id,
         email=payload.admin_email,
@@ -91,7 +90,7 @@ def create_expert(db: Session, email: str, full_name: str) -> User:
     if existing:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Email already exists")
 
-    random_password = secrets.token_urlsafe(12)
+    random_password = _generate_password()
     expert = User(
         tenant_id=None,
         email=email,

@@ -41,8 +41,10 @@ def get_current_user(
 
 
 def require_onboarding_complete(current_user: User = Depends(get_current_user)) -> User:
-    """BRD F-U01 AC3: User must complete onboarding before using the system."""
-    if current_user.role == UserRole.user and current_user.is_first_login:
+    """BRD F-U01 AC3: Only User role, must complete onboarding before using the system."""
+    if current_user.role != UserRole.user:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
+    if current_user.is_first_login:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Onboarding required. Please complete your company profile first.",

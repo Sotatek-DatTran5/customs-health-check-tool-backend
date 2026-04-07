@@ -63,3 +63,10 @@ class OnboardingRequest(BaseModel):
 
 class UpdateLocaleRequest(BaseModel):
     locale: str  # vi, en, ko, zh
+
+
+class AdminCreateRequest(BaseModel):
+    """F-A07: Super Admin creates admin for a tenant."""
+    email: EmailStr
+    full_name: str
+    tenant_id: int

@@ -5,14 +5,16 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_roles
 from app.models.user import User, UserRole
 from app.users import service
-from app.users.schemas import UserCreate, UserUpdate, UserResponse, OnboardingRequest, UpdateLocaleRequest
+from app.users.schemas import AdminCreateRequest, UserCreate, UserUpdate, UserResponse, OnboardingRequest, UpdateLocaleRequest
 
 router = APIRouter()
 
 tenant_admin_only = require_roles(UserRole.tenant_admin, UserRole.super_admin)
+super_admin_only = require_roles(UserRole.super_admin)
 
 USER_TAG = "User Site — Account"
 ADMIN_TAG = "Admin Site — Users"
+ADMIN_MGMT_TAG = "Admin Site — Admin Management"
 
 
 # ── User self-service (must be before /{user_id} routes) ──
@@ -37,7 +39,29 @@ def update_locale(
     return service.update_locale(db, current_user, payload.locale)
 
 
-# ── Admin CRUD ──
+# ── F-A07: Admin management (Super Admin only — must be before /{user_id}) ──
+
+@router.get("/admins/{tenant_id}", response_model=list[UserResponse], tags=[ADMIN_MGMT_TAG])
+def list_admins_for_tenant(
+    tenant_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(super_admin_only),
+):
+    """F-A07: Super Admin lists admins for a specific tenant."""
+    return service.get_admins_for_tenant(db, tenant_id)
+
+
+@router.post("/admins", response_model=UserResponse, tags=[ADMIN_MGMT_TAG])
+def create_admin(
+    payload: AdminCreateRequest,
+    db: Session = Depends(get_db),
+    _=Depends(super_admin_only),
+):
+    """F-A07: Super Admin creates admin for a tenant."""
+    return service.create_admin(db, payload.tenant_id, payload.email, payload.full_name)
+
+
+# ── Admin CRUD (Tenant Admin manages users in their tenant) ──
 
 @router.get("", response_model=list[UserResponse], tags=[ADMIN_TAG])
 def get_users(db: Session = Depends(get_db), current_user: User = Depends(tenant_admin_only)):

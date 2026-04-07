@@ -18,8 +18,18 @@ def test_get_stats_admin(client, admin_user):
     assert data.get("total_tenants") is None  # tenant admin doesn't get this
 
 
-def test_get_stats_normal_user_forbidden(client, normal_user):
+def test_get_stats_normal_user_personal(client, normal_user):
+    """BRD F-U02: User can see personal dashboard stats."""
     r = client.get("/dashboard/stats", headers=auth_header(normal_user))
+    assert r.status_code == 200
+    data = r.json()
+    assert "total_requests" in data
+    assert data.get("total_tenants") is None  # user doesn't see tenant stats
+
+
+def test_get_stats_expert_forbidden(client, expert_user):
+    """BRD 4.5: Expert should NOT have dashboard access."""
+    r = client.get("/dashboard/stats", headers=auth_header(expert_user))
     assert r.status_code == 403
 
 

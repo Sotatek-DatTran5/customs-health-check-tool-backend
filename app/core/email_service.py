@@ -66,10 +66,18 @@ def _get_subject(locale: str, template_key: str, **kwargs) -> str:
 def send_welcome_email(user, tenant_name: str, password: str):
     locale = getattr(user, "locale", "vi")
     subject = _get_subject(locale, "welcome", tenant_name=tenant_name)
+
+    # BRD Email #1: Link to tenant subdomain for users, admin portal for admin/expert
+    from app.models.user import UserRole
+    if getattr(user, "role", None) == UserRole.user and getattr(user, "tenant", None):
+        login_url = f"http://{user.tenant.subdomain}.{settings.BASE_DOMAIN}/auth/login"
+    else:
+        login_url = f"http://{settings.ADMIN_DOMAIN}/auth/login"
+
     body = (
         f"Email: {user.email}\n"
         f"Password: {password}\n\n"
-        f"Login: http://{settings.ADMIN_DOMAIN}/auth/login\n"
+        f"Login: {login_url}\n"
         f"Please change your password after first login."
     )
     send_email(to=user.email, subject=subject, body=body)
