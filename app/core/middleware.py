@@ -5,11 +5,16 @@ from app.core.database import SessionLocal
 from app.core.config import settings
 
 
+def _is_ip_address(host: str) -> bool:
+    parts = host.split(".")
+    return len(parts) == 4 and all(p.isdigit() and 0 <= int(p) <= 255 for p in parts)
+
+
 async def tenant_middleware(request: Request, call_next):
     host = request.headers.get("host", "").split(":")[0]
 
-    # Admin site — bỏ qua tenant middleware
-    if host == settings.ADMIN_DOMAIN:
+    # Admin site, base domain, or direct IP — skip tenant resolution
+    if host in (settings.ADMIN_DOMAIN, settings.BASE_DOMAIN) or _is_ip_address(host):
         return await call_next(request)
 
     # User site — extract subdomain
