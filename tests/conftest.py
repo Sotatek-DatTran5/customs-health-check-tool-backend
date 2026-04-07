@@ -126,6 +126,23 @@ def normal_user(db, tenant) -> User:
         password_hash=hash_password("User@1234"),
         role=UserRole.user,
         tenant_id=tenant.id,
+        is_first_login=False,  # Onboarding completed
+    )
+    db.add(u)
+    db.flush()
+    return u
+
+
+@pytest.fixture()
+def new_user(db, tenant) -> User:
+    """User who hasn't completed onboarding (is_first_login=True)."""
+    u = User(
+        email="newbie@test.com",
+        full_name="New User",
+        password_hash=hash_password("User@1234"),
+        role=UserRole.user,
+        tenant_id=tenant.id,
+        is_first_login=True,
     )
     db.add(u)
     db.flush()

@@ -48,8 +48,14 @@ def get_file_by_id(db: Session, file_id: int) -> RequestFile | None:
     return db.query(RequestFile).filter(RequestFile.id == file_id).first()
 
 
-def get_by_user(db: Session, user_id: int) -> list[Request]:
-    return db.query(Request).filter(Request.user_id == user_id).order_by(Request.submitted_at.desc()).all()
+def get_by_user(db: Session, user_id: int, filters: dict | None = None) -> list[Request]:
+    query = db.query(Request).filter(Request.user_id == user_id)
+    if filters:
+        if filters.get("status"):
+            query = query.filter(Request.status == filters["status"])
+        if filters.get("type"):
+            query = query.filter(Request.type == filters["type"])
+    return query.order_by(Request.submitted_at.desc()).all()
 
 
 def get_by_tenant(db: Session, tenant_id: int) -> list[Request]:

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, require_roles
+from app.core.dependencies import get_current_user, require_onboarding_complete, require_roles
 from app.models.request import RequestStatus, RequestType
 from app.models.user import User, UserRole
 from app.requests import service
@@ -14,57 +14,63 @@ from app.requests.schemas import (
     RequestResponse,
 )
 
-router = APIRouter(tags=["requests"])
+router = APIRouter()
 
 admin_or_expert = require_roles(UserRole.tenant_admin, UserRole.expert, UserRole.super_admin)
 admin_only = require_roles(UserRole.tenant_admin, UserRole.super_admin)
+
+USER_TAG = "User Site — Requests"
+ADMIN_TAG = "Admin Site — Requests"
 
 
 # ════════════════════════════════════════════════════
 #  USER PORTAL endpoints
 # ════════════════════════════════════════════════════
 
-@router.post("/chc", response_model=RequestResponse)
+@router.post("/chc", response_model=RequestResponse, tags=[USER_TAG])
 def create_chc_request(
     files: list[UploadFile] = File(...),
     chc_modules: list[str] = Form(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_onboarding_complete),
 ):
     """F-U03: User creates CHC order (upload ECUS + pick modules)."""
     return service.create_chc_request(db, files, chc_modules, current_user)
 
 
-@router.post("/etariff/manual", response_model=RequestResponse)
+@router.post("/etariff/manual", response_model=RequestResponse, tags=[USER_TAG])
 def create_manual_etariff(
     payload: CreateManualETariffRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_onboarding_complete),
 ):
     """F-U05: E-Tariff Manual Mode."""
     return service.create_manual_etariff(db, payload, current_user)
 
 
-@router.post("/etariff/batch", response_model=RequestResponse)
+@router.post("/etariff/batch", response_model=RequestResponse, tags=[USER_TAG])
 def create_batch_etariff(
     files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_onboarding_complete),
 ):
     """F-U06: E-Tariff Batch Mode."""
     return service.create_batch_etariff(db, files, current_user)
 
 
-@router.get("/my", response_model=list[RequestResponse])
+@router.get("/my", response_model=list[RequestResponse], tags=[USER_TAG])
 def get_my_requests(
+    status: RequestStatus | None = None,
+    type: RequestType | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """F-U02: User views their requests."""
-    return service.get_user_requests(db, current_user.id)
+    """F-U02: User views their requests (with optional filters)."""
+    filters = {"status": status, "type": type}
+    return service.get_user_requests(db, current_user.id, filters)
 
 
-@router.get("/my/{request_id}", response_model=RequestResponse)
+@router.get("/my/{request_id}", response_model=RequestResponse, tags=[USER_TAG])
 def get_my_request_detail(
     request_id: int,
     db: Session = Depends(get_db),
@@ -73,7 +79,7 @@ def get_my_request_detail(
     return service.get_user_request_detail(db, request_id, current_user)
 
 
-@router.post("/my/{request_id}/cancel", response_model=RequestResponse)
+@router.post("/my/{request_id}/cancel", response_model=RequestResponse, tags=[USER_TAG])
 def cancel_request(
     request_id: int,
     payload: CancelRequest | None = None,
@@ -85,7 +91,7 @@ def cancel_request(
     return service.cancel_request(db, request_id, current_user, reason)
 
 
-@router.get("/my/{request_id}/files/{file_id}/result")
+@router.get("/my/{request_id}/files/{file_id}/result", tags=[USER_TAG])
 def get_result_url(
     request_id: int,
     file_id: int,
@@ -100,7 +106,7 @@ def get_result_url(
 #  ADMIN PORTAL endpoints
 # ════════════════════════════════════════════════════
 
-@router.get("", response_model=list[RequestResponse])
+@router.get("", response_model=list[RequestResponse], tags=[ADMIN_TAG])
 def list_requests(
     status: RequestStatus | None = None,
     type: RequestType | None = None,
@@ -117,7 +123,7 @@ def list_requests(
     return service.get_tenant_requests(db, tenant_id, filters)
 
 
-@router.get("/{request_id}", response_model=RequestResponse)
+@router.get("/{request_id}", response_model=RequestResponse, tags=[ADMIN_TAG])
 def get_request_detail(
     request_id: int,
     db: Session = Depends(get_db),
@@ -126,7 +132,7 @@ def get_request_detail(
     return service.get_request_detail(db, request_id, current_user)
 
 
-@router.get("/{request_id}/files/{file_id}/download")
+@router.get("/{request_id}/files/{file_id}/download", tags=[ADMIN_TAG])
 def download_file(
     request_id: int,
     file_id: int,
@@ -136,7 +142,7 @@ def download_file(
     return service.download_file(db, request_id, file_id, current_user)
 
 
-@router.post("/{request_id}/assign")
+@router.post("/{request_id}/assign", tags=[ADMIN_TAG])
 def assign_expert(
     request_id: int,
     payload: AssignExpertRequest,
@@ -147,7 +153,7 @@ def assign_expert(
     return service.assign_expert(db, request_id, payload.expert_id, current_user)
 
 
-@router.post("/{request_id}/files/{file_id}/upload-result")
+@router.post("/{request_id}/files/{file_id}/upload-result", tags=[ADMIN_TAG])
 def upload_result(
     request_id: int,
     file_id: int,
@@ -161,7 +167,7 @@ def upload_result(
     return service.upload_result(db, request_id, file_id, excel_file, pdf_file, notes, current_user)
 
 
-@router.post("/{request_id}/approve")
+@router.post("/{request_id}/approve", tags=[ADMIN_TAG])
 def approve_request(
     request_id: int,
     payload: ApproveRequest | None = None,

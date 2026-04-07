@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError
 from sqlalchemy.orm import Session
@@ -11,6 +11,7 @@ bearer_scheme = HTTPBearer()
 
 
 def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> User:
@@ -31,7 +32,22 @@ def get_current_user(
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
+    # BRD 10.2: Tenant isolation — user must belong to the tenant resolved from subdomain
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if tenant_id and user.tenant_id != tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied for this tenant")
+
     return user
+
+
+def require_onboarding_complete(current_user: User = Depends(get_current_user)) -> User:
+    """BRD F-U01 AC3: User must complete onboarding before using the system."""
+    if current_user.role == UserRole.user and current_user.is_first_login:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Onboarding required. Please complete your company profile first.",
+        )
+    return current_user
 
 
 def require_roles(*roles: UserRole):

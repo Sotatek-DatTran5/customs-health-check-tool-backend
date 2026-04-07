@@ -60,13 +60,16 @@ def test_delete_user(client, admin_user, normal_user):
 
 # --- Onboarding ---
 
-def test_onboarding(client, normal_user):
-    r = client.post("/users/onboarding", headers=auth_header(normal_user), json={
+def test_onboarding(client, new_user):
+    r = client.post("/users/onboarding", headers=auth_header(new_user), json={
         "company_name": "ACME Corp",
         "tax_code": "0123456789",
         "company_address": "123 Main St",
         "contact_person": "John",
         "phone": "0901234567",
+        "contact_email": "john@acme.com",
+        "industry": "Manufacturing",
+        "company_type": "TNHH",
     })
     assert r.status_code == 200
     data = r.json()

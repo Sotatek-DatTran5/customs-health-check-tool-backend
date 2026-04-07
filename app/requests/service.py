@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core import storage
 from app.core.config import settings
-from app.core.email_service import send_request_confirmation, send_admin_new_request, send_expert_assigned, send_cancel_notification, send_result_delivered
+from app.core.email_service import send_request_confirmation, send_admin_new_request, send_expert_assigned, send_cancel_notification, send_result_uploaded_notification, send_result_delivered
 from app.models.request import Request, RequestFile, RequestStatus, RequestType, CHCModule
 from app.models.user import User, UserRole
 from app.requests import repository
@@ -128,8 +128,8 @@ def cancel_request(db: Session, request_id: int, user: User, reason: str | None 
     return req
 
 
-def get_user_requests(db: Session, user_id: int) -> list[Request]:
-    return repository.get_by_user(db, user_id)
+def get_user_requests(db: Session, user_id: int, filters: dict | None = None) -> list[Request]:
+    return repository.get_by_user(db, user_id, filters)
 
 
 def get_user_request_detail(db: Session, request_id: int, user: User) -> Request:
@@ -235,6 +235,11 @@ def upload_result(db: Session, request_id: int, file_id: int, excel_file: Upload
         repository.update_status(db, req, RequestStatus.completed)
 
     db.commit()
+
+    # BRD email #6: Notify admins when all results uploaded
+    if all_done:
+        send_result_uploaded_notification(db, req)
+
     return req
 
 

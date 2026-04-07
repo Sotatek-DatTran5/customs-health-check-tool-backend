@@ -7,12 +7,12 @@ from app.models.user import User, UserRole
 from app.settings.schemas import EmailConfigResponse, EmailConfigUpdate, ProfileResponse, ProfileUpdate
 from app.settings.service import get_email_config_masked, upsert_email_config
 
-router = APIRouter(prefix="/settings", tags=["settings"])
+router = APIRouter(prefix="/settings")
 
 tenant_admin_only = require_roles(UserRole.tenant_admin)
 
 
-@router.get("/profile", response_model=ProfileResponse)
+@router.get("/profile", response_model=ProfileResponse, tags=["User Site — Settings"])
 def get_profile(current_user: User = Depends(get_current_user)):
     return ProfileResponse(
         full_name=current_user.full_name,
@@ -32,7 +32,7 @@ def get_profile(current_user: User = Depends(get_current_user)):
     )
 
 
-@router.put("/profile", response_model=ProfileResponse)
+@router.put("/profile", response_model=ProfileResponse, tags=["User Site — Settings"])
 def update_profile(
     payload: ProfileUpdate,
     db: Session = Depends(get_db),
@@ -46,7 +46,7 @@ def update_profile(
     return get_profile(current_user)
 
 
-@router.get("/email-config", response_model=EmailConfigResponse | None)
+@router.get("/email-config", response_model=EmailConfigResponse | None, tags=["Admin Site — Settings"])
 def get_email_config_handler(
     db: Session = Depends(get_db),
     current_user: User = Depends(tenant_admin_only),
@@ -54,7 +54,7 @@ def get_email_config_handler(
     return get_email_config_masked(db, current_user.tenant_id)
 
 
-@router.put("/email-config", response_model=EmailConfigResponse)
+@router.put("/email-config", response_model=EmailConfigResponse, tags=["Admin Site — Settings"])
 def update_email_config_handler(
     payload: EmailConfigUpdate,
     db: Session = Depends(get_db),

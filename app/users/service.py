@@ -1,4 +1,6 @@
+import random
 import secrets
+import string
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
@@ -17,6 +19,21 @@ from app.users.schemas import UserCreate, UserUpdate, OnboardingRequest
 VALID_LOCALES = {"vi", "en", "ko", "zh"}
 
 
+def _generate_password(length: int = 12) -> str:
+    """Generate a random password that satisfies BRD policy: 8+ chars, uppercase, lowercase, digit."""
+    # Guarantee at least one of each required category
+    mandatory = [
+        secrets.choice(string.ascii_uppercase),
+        secrets.choice(string.ascii_lowercase),
+        secrets.choice(string.digits),
+    ]
+    pool = string.ascii_letters + string.digits
+    remaining = [secrets.choice(pool) for _ in range(length - len(mandatory))]
+    chars = mandatory + remaining
+    random.shuffle(chars)
+    return "".join(chars)
+
+
 def get_all(db: Session, tenant_id: int):
     return repository.get_all_in_tenant(db, tenant_id)
 
@@ -33,7 +50,7 @@ def create(db: Session, payload: UserCreate, tenant_id: int) -> User:
     if repository.get_by_email(db, payload.email):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Email already exists")
 
-    password = payload.password or secrets.token_urlsafe(12)
+    password = payload.password or _generate_password()
 
     user = repository.create(
         db,

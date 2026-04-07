@@ -9,7 +9,7 @@ from app.auth import service
 from app.auth.schemas import LoginRequest, TokenResponse, RefreshTokenRequest, ResetPasswordRequest, ChangePasswordRequest
 from app.models.user import User
 
-router = APIRouter(tags=["auth"])
+router = APIRouter(tags=["Auth"])
 
 
 @router.post("/login", response_model=TokenResponse)

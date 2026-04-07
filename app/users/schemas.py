@@ -38,15 +38,27 @@ class UserResponse(BaseModel):
 
 
 class OnboardingRequest(BaseModel):
-    """BRD F-U01 — First login onboarding (company profile)."""
+    """BRD F-U01 — First login onboarding (company profile). All fields required."""
     company_name: str
     tax_code: str
     company_address: str
     contact_person: str
     phone: str
-    contact_email: EmailStr | None = None
-    industry: str | None = None
-    company_type: str | None = None  # TNHH, Cổ phần, DNTN
+    contact_email: EmailStr
+    industry: str
+    company_type: str  # TNHH, Cổ phần, DNTN
+
+    @classmethod
+    def validate_tax_code(cls, v: str) -> str:
+        """MST: 10 or 13 digits."""
+        import re
+        cleaned = re.sub(r"[-\s]", "", v)
+        if not re.match(r"^\d{10}(\d{3})?$", cleaned):
+            raise ValueError("Mã số thuế phải có 10 hoặc 13 chữ số")
+        return cleaned
+
+    def model_post_init(self, __context) -> None:
+        self.tax_code = self.validate_tax_code(self.tax_code)
 
 
 class UpdateLocaleRequest(BaseModel):

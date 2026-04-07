@@ -224,3 +224,21 @@ def test_etariff_daily_limit(mock_s3, mock_confirm, client, db, normal_user, ten
         },
     )
     assert r2.status_code == 429
+
+
+# --- Onboarding enforcement ---
+
+def test_create_request_blocked_without_onboarding(client, new_user):
+    """BRD F-U01 AC3: User must complete onboarding before creating requests."""
+    r = client.post(
+        "/requests/etariff/manual",
+        headers=auth_header(new_user),
+        json={
+            "commodity_name": "Test",
+            "description": "Desc",
+            "function": "Fn",
+            "material_composition": "Mat",
+        },
+    )
+    assert r.status_code == 403
+    assert "Onboarding required" in r.json()["detail"]

@@ -12,7 +12,21 @@ from app.requests.router import router as requests_router
 from app.dashboard.router import router as dashboard_router
 from app.settings.router import router as settings_router
 
-app = FastAPI(title="CHC Backend", version="1.0.0")
+app = FastAPI(
+    title="CHC Backend",
+    version="1.0.0",
+    openapi_tags=[
+        {"name": "Auth", "description": "Authentication (shared)"},
+        {"name": "User Site — Requests", "description": "CHC/E-Tariff requests (User Portal)"},
+        {"name": "User Site — Account", "description": "Onboarding & locale (User Portal)"},
+        {"name": "User Site — Settings", "description": "Profile settings (User Portal)"},
+        {"name": "Admin Site — Requests", "description": "Request management (Admin Portal)"},
+        {"name": "Admin Site — Users", "description": "User CRUD (Admin Portal)"},
+        {"name": "Admin Site — Tenants", "description": "Tenant management (Admin Portal)"},
+        {"name": "Admin Site — Dashboard", "description": "Dashboard & stats (Admin Portal)"},
+        {"name": "Admin Site — Settings", "description": "Email config (Admin Portal)"},
+    ],
+)
 
 # CORS — restrict to valid domains (BRD 8.2)
 allowed_origins = [

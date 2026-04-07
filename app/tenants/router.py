@@ -7,7 +7,7 @@ from app.models.user import UserRole
 from app.tenants import service
 from app.tenants.schemas import TenantCreate, TenantUpdate, TenantResponse, ExpertCreate, ExpertResponse
 
-router = APIRouter(tags=["tenants"])
+router = APIRouter(tags=["Admin Site — Tenants"])
 
 super_admin_only = require_roles(UserRole.super_admin)
 admin_or_super = require_roles(UserRole.super_admin, UserRole.tenant_admin)

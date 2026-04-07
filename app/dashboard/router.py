@@ -7,7 +7,7 @@ from app.models.user import User, UserRole
 from app.dashboard import service
 from app.dashboard.schemas import DashboardStats, RecentTenant, RecentUser, RecentRequest, RoleDistribution
 
-router = APIRouter(tags=["dashboard"])
+router = APIRouter(tags=["Admin Site — Dashboard"])
 
 super_admin_only = require_roles(UserRole.super_admin)
 allowed_roles = require_roles(UserRole.super_admin, UserRole.tenant_admin, UserRole.expert)
