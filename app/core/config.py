@@ -34,9 +34,10 @@ class Settings(BaseSettings):
     # AWS SES (optional — leave empty to use SMTP above)
     SES_SENDER_EMAIL: str = ""
 
-    # AI API
+    # AI API — Report Service
     AI_API_URL: str = ""
-    AI_API_KEY: str = ""
+    AI_API_USERNAME: str = ""
+    AI_API_PASSWORD: str = ""
 
     # Domain
     ADMIN_DOMAIN: str = "localhost"
