@@ -1,6 +1,7 @@
+import json
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.models.request import CHCModule, RequestStatus, RequestType
 
@@ -14,10 +15,18 @@ class RequestFileResponse(BaseModel):
     file_size: int | None = None
     ai_status: str
     ai_task_id: str | None = None
+    ai_result_data: dict | None = None
     expert_s3_key: str | None = None
     expert_pdf_s3_key: str | None = None
     notes: str | None = None
     created_at: datetime
+
+    @field_validator("ai_result_data", mode="before")
+    @classmethod
+    def parse_ai_result_data(cls, v):
+        if isinstance(v, str):
+            return json.loads(v)
+        return v
 
     model_config = ConfigDict(from_attributes=True)
 

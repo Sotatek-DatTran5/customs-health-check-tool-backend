@@ -91,6 +91,7 @@ class RequestFile(Base):
     ai_status: Mapped[str] = mapped_column(String(20), default="not_started")  # not_started, running, completed, failed
     ai_task_id: Mapped[str | None] = mapped_column(String(255), nullable=True)  # Report Service task_id for polling
     ai_s3_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    ai_result_data: Mapped[str | None] = mapped_column(Text, nullable=True)  # Structured JSON from Report Service
 
     # Expert result
     expert_s3_key: Mapped[str | None] = mapped_column(String(500), nullable=True)  # Excel

@@ -108,7 +108,7 @@ def _process_chc(db, rf: RequestFile, request: Request):
 
 
 def _process_manual_etariff(db, rf: RequestFile, request: Request):
-    """Manual E-Tariff: map form data → classify/async → poll → save result."""
+    """Manual E-Tariff: map form data → classify/async → poll → save result + structured data."""
     input_data = json.loads(request.manual_input_data) if request.manual_input_data else {}
     product_data = {v: input_data.get(k, "") for k, v in CLASSIFY_FIELD_MAP.items()}
 
@@ -120,7 +120,15 @@ def _process_manual_etariff(db, rf: RequestFile, request: Request):
     if result["status"] == "FAILURE":
         raise RuntimeError(f"Classification failed: {result.get('error', 'unknown')}")
 
-    _save_result(db, rf, result["result"]["download_url"], request)
+    task_result = result["result"]
+    _save_result(db, rf, task_result["download_url"], request)
+
+    # Save structured classification data for frontend display
+    classification_data = {
+        "hs_code": task_result.get("hs_code"),
+        "classification_result": task_result.get("classification_result"),
+    }
+    rf.ai_result_data = json.dumps(classification_data, ensure_ascii=False)
 
 
 def _process_batch_etariff(db, rf: RequestFile, request: Request):
