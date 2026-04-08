@@ -6,7 +6,8 @@ from worker import celery_app
 from app.core.database import SessionLocal
 from app.core import storage
 from app.core import report_client
-from app.models.request import Request, RequestFile, RequestType
+from app.models.request import Request, RequestFile, RequestStatus, RequestType
+from app.requests import repository
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,14 @@ def run_ai_analysis(self, request_file_id: int):
 
         rf.ai_status = "completed"
         db.commit()
+
+        # E-Tariff is self-service: auto-deliver when AI completes (BRD 6.3)
+        if request.type in (RequestType.etariff_manual, RequestType.etariff_batch):
+            all_files_done = all(f.ai_status == "completed" for f in request.files)
+            if all_files_done:
+                repository.update_status(db, request, RequestStatus.delivered)
+                logger.info("E-Tariff request %s auto-delivered", request.display_id)
+
         logger.info("AI analysis completed for file %d (request %s)", rf.id, request.display_id)
 
     except Exception as e:

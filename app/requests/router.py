@@ -104,6 +104,16 @@ def get_result_url(
     return service.get_result_download_url(db, request_id, file_id, current_user)
 
 
+@router.post("/my/{request_id}/retry", response_model=RequestResponse, tags=[USER_TAG])
+def retry_etariff(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """AC6: Retry E-Tariff when AI failed."""
+    return service.retry_etariff(db, request_id, current_user)
+
+
 # ════════════════════════════════════════════════════
 #  ADMIN PORTAL endpoints
 # ════════════════════════════════════════════════════

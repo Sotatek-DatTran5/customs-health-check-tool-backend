@@ -144,7 +144,8 @@ def get_user_request_detail(db: Session, request_id: int, user: User) -> Request
 
 def get_result_download_url(db: Session, request_id: int, file_id: int, user: User) -> dict:
     req = _get_user_request(db, request_id, user)
-    if req.status != RequestStatus.delivered:
+    # CHC requires delivered status; E-Tariff just needs AI completed
+    if req.type == RequestType.chc and req.status != RequestStatus.delivered:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Results not yet delivered.")
     f = repository.get_file_by_id(db, file_id)
     if not f or f.request_id != req.id:
@@ -154,6 +155,25 @@ def get_result_download_url(db: Session, request_id: int, file_id: int, user: Us
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No result available.")
     url = storage.generate_presigned_url(result_key)
     return {"url": url, "filename": f.original_filename}
+
+
+def retry_etariff(db: Session, request_id: int, user: User) -> Request:
+    """BRD AC6 — Retry E-Tariff when AI failed."""
+    req = _get_user_request(db, request_id, user)
+    if req.type not in (RequestType.etariff_manual, RequestType.etariff_batch):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Retry only available for E-Tariff requests.")
+
+    failed_files = [f for f in req.files if f.ai_status == "failed"]
+    if not failed_files:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No failed files to retry.")
+
+    for f in failed_files:
+        f.ai_status = "not_started"
+        f.ai_task_id = None
+        db.commit()
+        run_ai_analysis.delay(f.id)
+
+    return req
 
 
 # ── Admin actions ──
