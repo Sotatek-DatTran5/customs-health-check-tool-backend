@@ -13,6 +13,7 @@ class RequestFileResponse(BaseModel):
     original_filename: str
     file_size: int | None = None
     ai_status: str
+    ai_task_id: str | None = None
     expert_s3_key: str | None = None
     expert_pdf_s3_key: str | None = None
     notes: str | None = None

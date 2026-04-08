@@ -12,6 +12,7 @@ from app.models.request import Request, RequestFile, RequestStatus, RequestType,
 from app.models.user import User, UserRole
 from app.requests import repository
 from app.requests.schemas import CreateManualETariffRequest
+from app.requests.tasks import run_ai_analysis
 
 ALLOWED_EXTENSIONS = {".xlsx", ".xls"}
 MAX_FILE_SIZE = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
@@ -56,7 +57,8 @@ def create_chc_request(db: Session, files: list[UploadFile], modules: list[str],
         s3_key = f"{user.tenant_id}/requests/{req.id}/{up_file.filename}"
         content = up_file.file.read()
         storage.upload_file(s3_key, content, up_file.content_type or "application/octet-stream")
-        repository.create_file(db, req.id, up_file.filename, s3_key, file_size)
+        rf = repository.create_file(db, req.id, up_file.filename, s3_key, file_size)
+        run_ai_analysis.delay(rf.id)
 
     # Emails (BRD AC2, AC3)
     send_request_confirmation(user, req)
@@ -83,7 +85,8 @@ def create_manual_etariff(db: Session, data: CreateManualETariffRequest, user: U
     s3_key = f"{user.tenant_id}/requests/{req.id}/{filename}"
     content_bytes = json.dumps(input_data, ensure_ascii=False, indent=2).encode("utf-8")
     storage.upload_file(s3_key, content_bytes, "application/json")
-    repository.create_file(db, req.id, filename, s3_key, len(content_bytes))
+    rf = repository.create_file(db, req.id, filename, s3_key, len(content_bytes))
+    run_ai_analysis.delay(rf.id)
 
     send_request_confirmation(user, req)
     _notify_admins_new_request(db, user.tenant_id, req)
@@ -107,7 +110,8 @@ def create_batch_etariff(db: Session, files: list[UploadFile], user: User) -> Re
         s3_key = f"{user.tenant_id}/requests/{req.id}/{up_file.filename}"
         content = up_file.file.read()
         storage.upload_file(s3_key, content, up_file.content_type or "application/octet-stream")
-        repository.create_file(db, req.id, up_file.filename, s3_key, file_size)
+        rf = repository.create_file(db, req.id, up_file.filename, s3_key, file_size)
+        run_ai_analysis.delay(rf.id)
 
     send_request_confirmation(user, req)
     _notify_admins_new_request(db, user.tenant_id, req)
