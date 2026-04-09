@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     AI_API_USERNAME: str = ""
     AI_API_PASSWORD: str = ""
 
+    # This server's URL (for webhook callbacks from Report Service)
+    BACKEND_BASE_URL: str = ""
+    WEBHOOK_SECRET: str = ""  # Shared secret for Report Service → CHC webhook auth
+
     # Domain
     ADMIN_DOMAIN: str = "localhost"
     BASE_DOMAIN: str = "localhost"

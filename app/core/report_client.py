@@ -70,9 +70,15 @@ def _request(method: str, url: str, **kwargs):
         return r
 
 
+def _callback_url() -> str | None:
+    """Build the webhook callback URL if BACKEND_BASE_URL is configured."""
+    base = settings.BACKEND_BASE_URL.rstrip("/") if settings.BACKEND_BASE_URL else ""
+    return f"{base}/requests/webhook/ai-result" if base else None
+
+
 def process_async(object_name: str, input_sections: list[str] | None = None) -> str:
     """POST /api/v1/report/process/async — CHC analysis. Returns task_id."""
-    body: dict = {"object_name": object_name}
+    body: dict = {"object_name": object_name, "callback_url": _callback_url()}
     if input_sections:
         body["input_sections"] = input_sections
     return _request("post", "/api/v1/report/process/async", json=body).json()["task_id"]
@@ -80,12 +86,14 @@ def process_async(object_name: str, input_sections: list[str] | None = None) -> 
 
 def classify_async(product_data: dict) -> str:
     """POST /api/v1/report/classify/async — single product. Returns task_id."""
-    return _request("post", "/api/v1/report/classify/async", json=product_data).json()["task_id"]
+    body = {**product_data, "callback_url": _callback_url()}
+    return _request("post", "/api/v1/report/classify/async", json=body).json()["task_id"]
 
 
 def classify_batch_async(object_name: str) -> str:
     """POST /api/v1/report/classify/batch/async — batch from Excel. Returns task_id."""
-    return _request("post", "/api/v1/report/classify/batch/async", json={"object_name": object_name}).json()["task_id"]
+    body = {"object_name": object_name, "callback_url": _callback_url()}
+    return _request("post", "/api/v1/report/classify/batch/async", json=body).json()["task_id"]
 
 
 def poll_task(task_id: str, endpoint: str) -> dict:

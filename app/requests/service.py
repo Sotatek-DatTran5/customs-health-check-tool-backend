@@ -311,6 +311,58 @@ def _notify_admins_new_request(db: Session, tenant_id: int, req: Request):
         send_admin_new_request(admin, req)
 
 
+def handle_ai_callback(db: Session, task_id: str, task_status: str, result: dict | None, error: str | None):
+    """Handle webhook callback from Report Service when AI task completes."""
+    import logging
+    logger = logging.getLogger(__name__)
+
+    rf = db.query(RequestFile).filter(RequestFile.ai_task_id == task_id).first()
+    if not rf:
+        logger.warning("AI callback for unknown task_id=%s, ignoring", task_id)
+        return {"status": "ignored", "reason": "unknown task_id"}
+
+    logger.info("AI callback received: task_id=%s status=%s file_id=%d", task_id, task_status, rf.id)
+
+    req = db.query(Request).filter(Request.id == rf.request_id).first()
+
+    if task_status == "SUCCESS" and result:
+        rf.ai_status = "completed"
+        if result.get("object_name"):
+            rf.ai_s3_key = result["object_name"]
+        # Save structured data for manual E-Tariff
+        if req and req.type == RequestType.etariff_manual:
+            classification_data = {
+                "hs_code": result.get("hs_code"),
+                "classification_result": result.get("classification_result"),
+            }
+            rf.ai_result_data = json.dumps(classification_data, ensure_ascii=False)
+    else:
+        rf.ai_status = "failed"
+        logger.warning("AI task %s failed: %s", task_id, error)
+
+    db.commit()
+
+    # Auto-deliver E-Tariff requests when all files are done
+    if req and req.type in (RequestType.etariff_manual, RequestType.etariff_batch):
+        db.refresh(req)
+        all_files_done = all(f.ai_status == "completed" for f in req.files)
+        if all_files_done:
+            repository.update_status(db, req, RequestStatus.delivered)
+            logger.info("E-Tariff request %s auto-delivered via callback", req.display_id)
+
+    return {"status": "ok"}
+
+    # Auto-deliver E-Tariff (BRD 6.3) — with idempotency guard
+    if req and req.type in (RequestType.etariff_manual, RequestType.etariff_batch):
+        if req.status not in (RequestStatus.delivered, RequestStatus.cancelled):
+            all_files_done = all(f.ai_status == "completed" for f in req.files)
+            if all_files_done:
+                repository.update_status(db, req, RequestStatus.delivered)
+                logger.info("E-Tariff request %s auto-delivered via callback", req.display_id)
+
+    return {"status": "ok", "task_id": task_id}
+
+
 def _check_etariff_limit(db: Session, user: User):
     from datetime import datetime, timezone
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)

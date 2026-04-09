@@ -6,12 +6,6 @@ services:
       - "8329:8329"
     env_file:
       - .env
-    environment:
-      DATABASE_URL: postgresql://user:password@postgres:5432/chc
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/1
-      SMTP_HOST: mailhog
-      AWS_ENDPOINT_URL: http://localstack:4566
     depends_on:
       postgres:
         condition: service_healthy
@@ -30,12 +24,6 @@ services:
     command: uv run celery -A worker.celery_app worker --loglevel=info
     env_file:
       - .env
-    environment:
-      DATABASE_URL: postgresql://user:password@postgres:5432/chc
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/1
-      SMTP_HOST: mailhog
-      AWS_ENDPOINT_URL: http://localstack:4566
     depends_on:
       postgres:
         condition: service_healthy
@@ -70,20 +58,6 @@ services:
       timeout: 5s
       retries: 5
 
-  localstack:
-    image: localstack/localstack:3.6
-    restart: always
-    ports:
-      - "4566:4566"       # LocalStack S3 API
-    environment:
-      - SERVICES=s3
-      - DEFAULT_REGION=us-east-1
-      - AWS_ACCESS_KEY_ID=test
-      - AWS_SECRET_ACCESS_KEY=test
-    volumes:
-      - localstack_data:/var/lib/localstack
-      - /var/run/docker.sock:/var/run/docker.sock
-
   mailhog:
     image: mailhog/mailhog:latest
     restart: always
@@ -93,4 +67,3 @@ services:
 
 volumes:
   postgres_data:
-  localstack_data:

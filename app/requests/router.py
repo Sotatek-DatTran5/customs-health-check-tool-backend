@@ -1,6 +1,10 @@
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from typing import Optional
+
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_onboarding_complete, require_roles
 from app.models.request import RequestStatus, RequestType
@@ -177,6 +181,32 @@ def upload_result(
 ):
     """F-A03: Expert uploads result (Excel + PDF) → status=Completed."""
     return service.upload_result(db, request_id, file_id, excel_file, pdf_file, notes, current_user)
+
+
+# ════════════════════════════════════════════════════
+#  INTERNAL WEBHOOK (server-to-server, no user auth)
+# ════════════════════════════════════════════════════
+
+
+class AICallbackPayload(BaseModel):
+    task_id: str
+    status: str
+    result: Optional[dict] = None
+    error: Optional[str] = None
+
+
+@router.post("/webhook/ai-result", tags=["Internal"])
+def ai_result_callback(
+    payload: AICallbackPayload,
+    db: Session = Depends(get_db),
+    x_webhook_secret: Optional[str] = Header(None),
+):
+    """Webhook called by Report Service when AI task completes."""
+    if settings.WEBHOOK_SECRET and x_webhook_secret != settings.WEBHOOK_SECRET:
+        raise HTTPException(status_code=403, detail="Invalid webhook secret")
+    return service.handle_ai_callback(
+        db, payload.task_id, payload.status, payload.result, payload.error,
+    )
 
 
 @router.post("/{request_id}/approve", tags=[ADMIN_TAG])
