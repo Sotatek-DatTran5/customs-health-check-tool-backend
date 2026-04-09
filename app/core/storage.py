@@ -32,7 +32,10 @@ def ensure_bucket():
     try:
         client.head_bucket(Bucket=_bucket())
     except botocore.exceptions.ClientError:
-        client.create_bucket(Bucket=_bucket())
+        client.create_bucket(
+            Bucket=_bucket(),
+            CreateBucketConfiguration={"LocationConstraint": settings.AWS_REGION},
+        )
 
 
 def upload_file(s3_key: str, content: bytes, content_type: str = "application/octet-stream") -> str:

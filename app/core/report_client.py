@@ -70,18 +70,6 @@ def _request(method: str, url: str, **kwargs):
         return r
 
 
-def get_upload_url(filename: str) -> dict:
-    """GET /api/v1/report/upload-url — presigned URL for MinIO upload."""
-    return _request("get", "/api/v1/report/upload-url", params={"filename": filename}).json()
-
-
-def upload_to_presigned_url(upload_url: str, file_bytes: bytes):
-    """PUT file bytes to a presigned upload URL."""
-    with httpx.Client(timeout=120.0) as c:
-        r = c.put(upload_url, content=file_bytes, headers={"Content-Type": "application/octet-stream"})
-        r.raise_for_status()
-
-
 def process_async(object_name: str, input_sections: list[str] | None = None) -> str:
     """POST /api/v1/report/process/async — CHC analysis. Returns task_id."""
     body: dict = {"object_name": object_name}
@@ -129,9 +117,3 @@ def poll_classify_batch_task(task_id: str) -> dict:
     return poll_task(task_id, "/api/v1/report/classify/batch/task/{task_id}")
 
 
-def download_result(download_url: str) -> bytes:
-    """Download result file from a presigned URL."""
-    with httpx.Client(timeout=120.0) as c:
-        r = c.get(download_url)
-        r.raise_for_status()
-        return r.content

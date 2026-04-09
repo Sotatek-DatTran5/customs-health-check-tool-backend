@@ -31,23 +31,9 @@ CLASSIFY_FIELD_MAP = {
 }
 
 
-def _upload_to_report_service(s3_key: str, filename: str) -> str:
-    """Download from our S3, upload to Report Service MinIO. Returns object_name."""
-    client = storage._get_s3_client()
-    obj = client.get_object(Bucket=storage._bucket(), Key=s3_key)
-    file_bytes = obj["Body"].read()
-
-    info = report_client.get_upload_url(filename)
-    report_client.upload_to_presigned_url(info["upload_url"], file_bytes)
-    return info["object_name"]
-
-
-def _save_result(db, rf: RequestFile, download_url: str, request: Request):
-    """Download result from Report Service, save to our S3."""
-    result_bytes = report_client.download_result(download_url)
-    result_key = f"{request.tenant_id}/ai-results/{request.id}/{rf.id}/{rf.original_filename}"
-    storage.upload_file(result_key, result_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    rf.ai_s3_key = result_key
+def _save_result(db, rf: RequestFile, result_s3_key: str):
+    """Save the result S3 key from Report Service."""
+    rf.ai_s3_key = result_s3_key
 
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=30)
@@ -98,14 +84,12 @@ def run_ai_analysis(self, request_file_id: int):
 
 
 def _process_chc(db, rf: RequestFile, request: Request):
-    """CHC order: upload file → process/async → poll → save result."""
-    object_name = _upload_to_report_service(rf.s3_key, rf.original_filename)
-
+    """CHC order: pass s3_key → process/async → poll → save result s3_key."""
     input_sections = None
     if request.chc_modules:
         input_sections = [SECTION_MAP[m] for m in request.chc_modules if m in SECTION_MAP]
 
-    task_id = report_client.process_async(object_name, input_sections or None)
+    task_id = report_client.process_async(rf.s3_key, input_sections or None)
     rf.ai_task_id = task_id
     db.commit()
 
@@ -113,7 +97,7 @@ def _process_chc(db, rf: RequestFile, request: Request):
     if result["status"] == "FAILURE":
         raise RuntimeError(f"Report Service failed: {result.get('error', 'unknown')}")
 
-    _save_result(db, rf, result["result"]["download_url"], request)
+    _save_result(db, rf, result["result"]["object_name"])
 
 
 def _process_manual_etariff(db, rf: RequestFile, request: Request):
@@ -130,7 +114,7 @@ def _process_manual_etariff(db, rf: RequestFile, request: Request):
         raise RuntimeError(f"Classification failed: {result.get('error', 'unknown')}")
 
     task_result = result["result"]
-    _save_result(db, rf, task_result["download_url"], request)
+    _save_result(db, rf, task_result["object_name"])
 
     # Save structured classification data for frontend display
     classification_data = {
@@ -141,10 +125,8 @@ def _process_manual_etariff(db, rf: RequestFile, request: Request):
 
 
 def _process_batch_etariff(db, rf: RequestFile, request: Request):
-    """Batch E-Tariff: upload file → classify/batch/async → poll → save result."""
-    object_name = _upload_to_report_service(rf.s3_key, rf.original_filename)
-
-    task_id = report_client.classify_batch_async(object_name)
+    """Batch E-Tariff: pass s3_key → classify/batch/async → poll → save result s3_key."""
+    task_id = report_client.classify_batch_async(rf.s3_key)
     rf.ai_task_id = task_id
     db.commit()
 
@@ -152,4 +134,4 @@ def _process_batch_etariff(db, rf: RequestFile, request: Request):
     if result["status"] == "FAILURE":
         raise RuntimeError(f"Batch classification failed: {result.get('error', 'unknown')}")
 
-    _save_result(db, rf, result["result"]["download_url"], request)
+    _save_result(db, rf, result["result"]["object_name"])

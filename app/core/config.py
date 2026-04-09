@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     AWS_SECRET_ACCESS_KEY: str = ""
     AWS_REGION: str = "ap-southeast-1"
     AWS_ENDPOINT_URL: str = ""  # LocalStack: http://localhost:4566
-    S3_BUCKET_NAME: str = "chc-files"
+    S3_BUCKET_NAME: str = "chc-files-sotatek"
 
     # SMTP (MailHog in dev, real SMTP in prod)
     SMTP_HOST: str = ""
