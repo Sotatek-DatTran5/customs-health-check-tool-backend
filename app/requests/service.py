@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core import storage
 from app.core.config import settings
 from app.core.email_service import send_request_confirmation, send_admin_new_request, send_expert_assigned, send_cancel_notification, send_result_uploaded_notification, send_result_delivered
+from app.core.report_client import check_health as check_report_service_health
 from app.models.request import Request, RequestFile, RequestStatus, RequestType, CHCModule
 from app.models.user import User, UserRole
 from app.requests import repository
@@ -16,6 +17,12 @@ from app.requests.tasks import run_ai_analysis
 
 ALLOWED_EXTENSIONS = {".xlsx", ".xls"}
 MAX_FILE_SIZE = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+
+
+def _check_ai_service_available():
+    """Raise 503 if Report Service is down."""
+    if not check_report_service_health():
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Hệ thống AI đang bảo trì, vui lòng thử lại sau.")
 
 
 def _build_display_id(db: Session, tenant_code: str, tenant_id: int) -> str:
@@ -39,6 +46,7 @@ def _validate_files(files: list[UploadFile]):
 # ── User actions ──
 
 def create_chc_request(db: Session, files: list[UploadFile], modules: list[str], user: User) -> Request:
+    _check_ai_service_available()
     _validate_files(files)
     if not modules:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "At least one CHC module must be selected.")
@@ -68,7 +76,7 @@ def create_chc_request(db: Session, files: list[UploadFile], modules: list[str],
 
 
 def create_manual_etariff(db: Session, data: CreateManualETariffRequest, user: User) -> Request:
-    # Check daily limit
+    _check_ai_service_available()
     _check_etariff_limit(db, user)
 
     display_id = _build_display_id(db, user.tenant.tenant_code, user.tenant_id)
@@ -94,6 +102,7 @@ def create_manual_etariff(db: Session, data: CreateManualETariffRequest, user: U
 
 
 def create_batch_etariff(db: Session, files: list[UploadFile], user: User) -> Request:
+    _check_ai_service_available()
     _validate_files(files)
     _check_etariff_limit(db, user)
 
@@ -342,18 +351,9 @@ def handle_ai_callback(db: Session, task_id: str, task_status: str, result: dict
 
     db.commit()
 
-    # Auto-deliver E-Tariff requests when all files are done
-    if req and req.type in (RequestType.etariff_manual, RequestType.etariff_batch):
-        db.refresh(req)
-        all_files_done = all(f.ai_status == "completed" for f in req.files)
-        if all_files_done:
-            repository.update_status(db, req, RequestStatus.delivered)
-            logger.info("E-Tariff request %s auto-delivered via callback", req.display_id)
-
-    return {"status": "ok"}
-
     # Auto-deliver E-Tariff (BRD 6.3) — with idempotency guard
     if req and req.type in (RequestType.etariff_manual, RequestType.etariff_batch):
+        db.refresh(req)
         if req.status not in (RequestStatus.delivered, RequestStatus.cancelled):
             all_files_done = all(f.ai_status == "completed" for f in req.files)
             if all_files_done:

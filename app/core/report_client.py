@@ -76,6 +76,16 @@ def _callback_url() -> str | None:
     return f"{base}/requests/webhook/ai-result" if base else None
 
 
+def check_health() -> bool:
+    """Check if Report Service is healthy. Returns True if reachable and healthy."""
+    try:
+        with httpx.Client(base_url=settings.AI_API_URL, timeout=5.0) as c:
+            r = c.get("/health")
+            return r.status_code == 200
+    except Exception:
+        return False
+
+
 def process_async(object_name: str, input_sections: list[str] | None = None) -> str:
     """POST /api/v1/report/process/async — CHC analysis. Returns task_id."""
     body: dict = {"object_name": object_name, "callback_url": _callback_url()}
