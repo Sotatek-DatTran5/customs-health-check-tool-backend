@@ -1,9 +1,9 @@
 import json
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-from app.models.request import CHCModule, RequestStatus, RequestType
+from app.models.request import CHCModule, RequestStatus, RequestType, USER_FACING_STATUS_MAP
 
 
 # ── Response schemas ──
@@ -36,6 +36,7 @@ class RequestResponse(BaseModel):
     display_id: str
     type: str
     status: str
+    user_facing_status: str | None = None
     chc_modules: list[str] | None = None
     assigned_expert_id: int | None = None
     assigned_expert_name: str | None = None
@@ -44,11 +45,57 @@ class RequestResponse(BaseModel):
     delivered_at: datetime | None = None
     cancelled_at: datetime | None = None
     admin_notes: str | None = None
+    has_downloaded: bool = False
+    has_rated: bool = False
+    rating: int | None = None
+    pricing_tier: str | None = None
     files: list[RequestFileResponse] = []
     user_name: str | None = None
     user_email: str | None = None
 
+    @model_validator(mode="after")
+    def compute_derived_fields(self):
+        # User-facing status mapping
+        if self.user_facing_status is None and self.status:
+            try:
+                self.user_facing_status = USER_FACING_STATUS_MAP[RequestStatus(self.status)]
+            except (ValueError, KeyError):
+                self.user_facing_status = self.status
+        # Pricing tier for CHC requests (BRD v8)
+        if self.pricing_tier is None and self.type == "chc" and self.chc_modules:
+            n = len(self.chc_modules)
+            self.pricing_tier = "Gói Toàn diện" if n >= 3 else "Gói Cơ bản"
+        return self
+
     model_config = ConfigDict(from_attributes=True)
+
+
+# ── Presigned URL upload schemas (BRD v8) ──
+
+class PresignedURLRequest(BaseModel):
+    """Step 1: Request presigned upload URL."""
+    filename: str
+    file_size: int
+    request_type: RequestType
+    chc_modules: list[CHCModule] | None = None
+
+
+class PresignedURLResponse(BaseModel):
+    request_id: int
+    file_id: int
+    display_id: str
+    upload_url: str
+    s3_key: str
+    expires_in: int = 900
+
+
+class ConfirmUploadResponse(BaseModel):
+    request_id: int
+    display_id: str
+    status: str
+    row_count: int | None = None
+    quota_remaining: int | None = None
+    warning: str | None = None
 
 
 # ── Create schemas ──
@@ -81,6 +128,24 @@ class ApproveRequest(BaseModel):
 
 
 class CancelRequest(BaseModel):
+    reason: str | None = None
+
+
+class RateRequest(BaseModel):
+    """User rates a delivered request (1-5 stars)."""
+    rating: int
+    comment: str | None = None
+
+    @field_validator("rating")
+    @classmethod
+    def validate_rating(cls, v):
+        if not 1 <= v <= 5:
+            raise ValueError("Rating must be between 1 and 5.")
+        return v
+
+
+class ReassignExpertRequest(BaseModel):
+    expert_id: int
     reason: str | None = None
 
 

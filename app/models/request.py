@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -9,12 +9,34 @@ from app.core.database import Base
 
 
 class RequestStatus(str, enum.Enum):
-    """BRD 6.2 — Request Status Flow"""
-    pending = "pending"          # User vừa tạo, chờ Admin xử lý
-    processing = "processing"    # Admin đã assign Expert, đang xử lý
-    completed = "completed"      # Expert đã upload kết quả, chờ Admin duyệt
-    delivered = "delivered"      # Admin đã duyệt, kết quả đã gửi User
-    cancelled = "cancelled"      # User hủy đơn
+    """BRD v8 6.2 — Request Status Flow (7 statuses)"""
+    pending = "pending"                        # User vừa tạo
+    ai_processing = "ai_processing"            # Đang gọi Tool API xử lý
+    pending_assignment = "pending_assignment"   # AI xong, chờ Admin assign Expert
+    processing = "processing"                  # Admin đã assign Expert, đang xử lý
+    completed = "completed"                    # Expert đã upload kết quả, chờ Admin duyệt
+    delivered = "delivered"                    # Admin đã duyệt, kết quả đã gửi User
+    cancelled = "cancelled"                    # User hủy đơn
+
+
+# User Portal shows 5 statuses mapped from 7 internal
+USER_FACING_STATUS_MAP = {
+    RequestStatus.pending: "pending",
+    RequestStatus.ai_processing: "processing",
+    RequestStatus.pending_assignment: "processing",
+    RequestStatus.processing: "processing",
+    RequestStatus.completed: "completed",
+    RequestStatus.delivered: "delivered",
+    RequestStatus.cancelled: "cancelled",
+}
+
+# Statuses that allow user cancellation
+CANCELLABLE_STATUSES = {
+    RequestStatus.pending,
+    RequestStatus.ai_processing,
+    RequestStatus.pending_assignment,
+    RequestStatus.processing,
+}
 
 
 class RequestType(str, enum.Enum):
@@ -65,13 +87,31 @@ class Request(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
-    # Admin notes
+    # AI processing (BRD v8)
+    ai_processing_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ai_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ai_draft_s3_key: Mapped[str | None] = mapped_column(String(500), nullable=True)  # WP Draft from AI
+
+    # Approval audit trail (BRD v4)
+    approved_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Notes
     admin_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    internal_note: Mapped[str | None] = mapped_column(Text, nullable=True)  # Note khi assign
+
+    # Rating (BRD v3/v6)
+    has_downloaded: Mapped[bool] = mapped_column(Boolean, default=False)
+    has_rated: Mapped[bool] = mapped_column(Boolean, default=False)
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 1-5
+    rating_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="requests")
     user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
     assigned_expert: Mapped["User | None"] = relationship("User", foreign_keys=[assigned_expert_id])
+    approver: Mapped["User | None"] = relationship("User", foreign_keys=[approved_by])
     files: Mapped[list["RequestFile"]] = relationship("RequestFile", back_populates="request", cascade="all, delete-orphan")
 
 

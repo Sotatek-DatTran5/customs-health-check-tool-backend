@@ -68,9 +68,15 @@ def run_ai_analysis(self, request_file_id: int):
             rf.ai_status = "completed"
             db.commit()
 
-            if request.type in (RequestType.etariff_manual, RequestType.etariff_batch):
-                all_files_done = all(f.ai_status == "completed" for f in request.files)
-                if all_files_done:
+            all_files_done = all(f.ai_status == "completed" for f in request.files)
+            if all_files_done:
+                if request.type == RequestType.chc:
+                    request.ai_draft_s3_key = rf.ai_s3_key
+                    repository.update_status(db, request, RequestStatus.pending_assignment)
+                    logger.info("CHC request %s → pending_assignment", request.display_id)
+                    from app.core.email_service import send_wp_draft_ready
+                    send_wp_draft_ready(db, request)
+                elif request.type in (RequestType.etariff_manual, RequestType.etariff_batch):
                     repository.update_status(db, request, RequestStatus.delivered)
                     logger.info("E-Tariff request %s auto-delivered", request.display_id)
 
@@ -141,3 +147,37 @@ def _process_batch_etariff(db, rf: RequestFile, request: Request):
         if result["status"] == "FAILURE":
             raise RuntimeError(f"Batch classification failed: {result.get('error', 'unknown')}")
         rf.ai_s3_key = result["result"]["object_name"]
+
+
+# ── SLA Monitoring (BRD v8) ──
+
+@celery_app.task
+def check_sla_compliance():
+    """Hourly scan: warn at 48h, breach at 72h for requests in processing."""
+    from datetime import datetime, timezone, timedelta
+    from app.core.email_service import send_sla_warning, send_sla_breach
+
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc)
+        warning_threshold = now - timedelta(hours=48)
+        breach_threshold = now - timedelta(hours=72)
+
+        processing = db.query(Request).filter(
+            Request.status == RequestStatus.processing,
+            Request.assigned_at.isnot(None),
+            Request.assigned_at < warning_threshold,
+        ).all()
+
+        for req in processing:
+            hours = (now - req.assigned_at).total_seconds() / 3600
+            if hours >= 72:
+                send_sla_breach(db, req)
+                logger.warning("SLA breach: %s (%.0fh)", req.display_id, hours)
+            elif hours >= 48:
+                send_sla_warning(db, req)
+                logger.info("SLA warning: %s (%.0fh)", req.display_id, hours)
+    except Exception as e:
+        logger.exception("SLA check failed: %s", e)
+    finally:
+        db.close()

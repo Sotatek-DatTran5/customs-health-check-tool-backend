@@ -1,4 +1,5 @@
 from fastapi import Request, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
@@ -25,12 +26,23 @@ async def tenant_middleware(request: Request, call_next):
     db: Session = SessionLocal()
     try:
         from app.models.tenant import Tenant
-        tenant = db.query(Tenant).filter(
-            Tenant.subdomain == subdomain,
-            Tenant.is_active == True
-        ).first()
+        tenant = db.query(Tenant).filter(Tenant.subdomain == subdomain).first()
         if not tenant:
             raise HTTPException(status_code=404, detail="Tenant not found")
+
+        # BRD v8 — Tenant disabled: return structured JSON with owner contact
+        if not tenant.is_active:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": "tenant_disabled",
+                    "message": "Tenant này đã bị vô hiệu hóa. Vui lòng liên hệ chủ sở hữu.",
+                    "tenant_name": tenant.name,
+                    "owner_name": tenant.owner_name,
+                    "owner_email": tenant.owner_email,
+                    "owner_phone": tenant.owner_phone,
+                },
+            )
         request.state.tenant_id = tenant.id
     finally:
         db.close()

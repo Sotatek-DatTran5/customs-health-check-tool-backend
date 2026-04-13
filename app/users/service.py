@@ -86,6 +86,7 @@ def complete_onboarding(db: Session, current_user: User, data: OnboardingRequest
     current_user.contact_person = data.contact_person
     current_user.phone = data.phone
     current_user.contact_email = data.contact_email or current_user.email
+    current_user.result_email = data.result_email
     current_user.industry = data.industry
     current_user.company_type = data.company_type
     current_user.is_first_login = False

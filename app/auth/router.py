@@ -6,7 +6,7 @@ from app.core.dependencies import get_current_user
 from app.core.security import blacklist_token
 from app.core.config import settings
 from app.auth import service
-from app.auth.schemas import LoginRequest, TokenResponse, RefreshTokenRequest, ResetPasswordRequest, ChangePasswordRequest
+from app.auth.schemas import LoginRequest, TokenResponse, RefreshTokenRequest, ResetPasswordRequest, ChangePasswordRequest, ForgotPasswordRequest
 from app.models.user import User
 
 router = APIRouter(tags=["Auth"])
@@ -29,6 +29,13 @@ def logout(request: Request, current_user: User = Depends(get_current_user)):
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     blacklist_token(token, settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60)
     return {"message": "Logged out"}
+
+
+@router.post("/forgot-password")
+def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    """BRD v8 — Self-service forgot password. Sends reset link via email. Always returns 200."""
+    service.forgot_password(db, payload)
+    return {"message": "Nếu email tồn tại trong hệ thống, chúng tôi đã gửi link đặt lại mật khẩu."}
 
 
 @router.post("/reset-password")

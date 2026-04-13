@@ -37,6 +37,9 @@ class User(Base):
     industry: Mapped[str | None] = mapped_column(String(255), nullable=True)  # Ngành nghề
     company_type: Mapped[str | None] = mapped_column(String(50), nullable=True)  # TNHH, Cổ phần, DNTN...
 
+    # Result delivery (BRD v8)
+    result_email: Mapped[str | None] = mapped_column(String(255), nullable=True)  # Email nhận kết quả CHC
+
     # i18n (BRD 12)
     locale: Mapped[str] = mapped_column(String(5), default="vi")  # vi, en, ko, zh
 

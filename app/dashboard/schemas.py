@@ -9,6 +9,8 @@ class DashboardStats(BaseModel):
 
     # Request status breakdown (BRD F-A02)
     requests_pending: int = 0
+    requests_ai_processing: int = 0
+    requests_pending_assignment: int = 0
     requests_processing: int = 0
     requests_completed: int = 0
     requests_delivered: int = 0
@@ -24,6 +26,23 @@ class DashboardStats(BaseModel):
     requests_this_month: int = 0
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ETariffUsageBar(BaseModel):
+    period: str  # "2026-04-13" for day, "2026-W15" for week, "2026-04" for month
+    row_count: int
+    request_count: int
+
+
+class SatisfactionScore(BaseModel):
+    average_rating: float | None = None
+    total_rated: int = 0
+    rating_breakdown: dict[str, int] = {}  # {"1": 0, "2": 1, ...}
+
+
+class SLAOverdue(BaseModel):
+    warning_count: int = 0  # processing > 48h
+    breach_count: int = 0   # processing > 72h
 
 
 class RecentTenant(BaseModel):

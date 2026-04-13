@@ -68,10 +68,27 @@ def download_file_stream(s3_key: str) -> StreamingResponse:
 
 
 def generate_presigned_url(s3_key: str, expires_in: int = 604800) -> str:
-    """Generate presigned URL (default 7 days)."""
+    """Generate presigned download URL (default 7 days)."""
     client = _get_s3_client()
     return client.generate_presigned_url(
         "get_object",
         Params={"Bucket": _bucket(), "Key": s3_key},
         ExpiresIn=expires_in,
     )
+
+
+def generate_presigned_upload_url(s3_key: str, content_type: str = "application/octet-stream", expires_in: int = 900) -> str:
+    """Generate presigned upload URL (default 15 min)."""
+    client = _get_s3_client()
+    return client.generate_presigned_url(
+        "put_object",
+        Params={"Bucket": _bucket(), "Key": s3_key, "ContentType": content_type},
+        ExpiresIn=expires_in,
+    )
+
+
+def download_file_bytes(s3_key: str) -> bytes:
+    """Download file from S3 as bytes."""
+    client = _get_s3_client()
+    response = client.get_object(Bucket=_bucket(), Key=s3_key)
+    return response["Body"].read()

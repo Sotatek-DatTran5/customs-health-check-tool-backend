@@ -30,6 +30,7 @@ class UserResponse(BaseModel):
     company_name: str | None = None
     tax_code: str | None = None
     phone: str | None = None
+    result_email: str | None = None
     last_login_at: datetime | None = None
     tenant_id: int | None = None
     created_at: datetime | None = None
@@ -45,6 +46,7 @@ class OnboardingRequest(BaseModel):
     contact_person: str
     phone: str
     contact_email: EmailStr
+    result_email: EmailStr | None = None  # BRD v8: email nhận kết quả CHC
     industry: str
     company_type: str  # TNHH, Cổ phần, DNTN
 

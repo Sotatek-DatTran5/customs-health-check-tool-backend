@@ -5,7 +5,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_roles
 from app.models.user import User, UserRole
 from app.dashboard import service
-from app.dashboard.schemas import DashboardStats, RecentTenant, RecentUser, RecentRequest, RoleDistribution
+from app.dashboard.schemas import DashboardStats, RecentTenant, RecentUser, RecentRequest, RoleDistribution, ETariffUsageBar, SatisfactionScore, SLAOverdue
 
 router = APIRouter()
 
@@ -62,3 +62,34 @@ def get_role_distribution_handler(
     tenant_id = None if current_user.role == UserRole.super_admin else current_user.tenant_id
     counts = service.get_role_distribution(db, tenant_id)
     return RoleDistribution(**counts)
+
+
+@router.get("/etariff-usage", response_model=list[ETariffUsageBar], tags=[ADMIN_TAG])
+def get_etariff_usage_handler(
+    period: str = Query(default="day", pattern="^(day|week|month)$"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_roles),
+):
+    """BRD v8 — E-Tariff usage bar chart."""
+    tenant_id = None if current_user.role == UserRole.super_admin else current_user.tenant_id
+    return service.get_etariff_usage(db, tenant_id, period)
+
+
+@router.get("/satisfaction-score", response_model=SatisfactionScore, tags=[ADMIN_TAG])
+def get_satisfaction_score_handler(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_roles),
+):
+    """BRD v8 — Average rating + breakdown."""
+    tenant_id = None if current_user.role == UserRole.super_admin else current_user.tenant_id
+    return service.get_satisfaction_score(db, tenant_id)
+
+
+@router.get("/sla-overdue", response_model=SLAOverdue, tags=[ADMIN_TAG])
+def get_sla_overdue_handler(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_roles),
+):
+    """BRD v8 — Requests overdue SLA (>48h warning, >72h breach)."""
+    tenant_id = None if current_user.role == UserRole.super_admin else current_user.tenant_id
+    return service.get_sla_overdue(db, tenant_id)

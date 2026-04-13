@@ -30,11 +30,16 @@ def create(db: Session, payload: TenantCreate):
         db,
         name=payload.name,
         tenant_code=payload.tenant_code.upper(),
-        subdomain=payload.tenant_code.lower(),
+        subdomain=payload.subdomain or payload.tenant_code.lower(),
         description=payload.description,
         is_active=payload.is_active,
         primary_color=payload.primary_color,
         display_name=payload.display_name or payload.name,
+        footer_text=payload.footer_text,
+        tagline=payload.tagline,
+        owner_name=payload.owner_name,
+        owner_email=payload.owner_email,
+        owner_phone=payload.owner_phone,
         etariff_daily_limit=payload.etariff_daily_limit,
     )
 

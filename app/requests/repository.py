@@ -69,7 +69,11 @@ def get_by_expert(db: Session, expert_id: int) -> list[Request]:
 def update_status(db: Session, req: Request, status: RequestStatus):
     req.status = status
     now = datetime.now(timezone.utc)
-    if status == RequestStatus.completed:
+    if status == RequestStatus.ai_processing:
+        req.ai_processing_started_at = now
+    elif status == RequestStatus.pending_assignment:
+        req.ai_completed_at = now
+    elif status == RequestStatus.completed:
         req.completed_at = now
     elif status == RequestStatus.delivered:
         req.delivered_at = now

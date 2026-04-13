@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import or_
@@ -7,15 +7,15 @@ from sqlalchemy.orm import Session
 
 from app.core import storage
 from app.core.config import settings
-from app.core.email_service import send_request_confirmation, send_admin_new_request, send_expert_assigned, send_cancel_notification, send_result_uploaded_notification, send_result_delivered
+from app.core.email_service import send_request_confirmation, send_admin_new_request, send_expert_assigned, send_cancel_notification, send_result_uploaded_notification, send_result_delivered, send_wp_draft_ready
 from app.core.report_client import check_health as check_report_service_health
-from app.models.request import Request, RequestFile, RequestStatus, RequestType, CHCModule
+from app.models.request import Request, RequestFile, RequestStatus, RequestType, CHCModule, CANCELLABLE_STATUSES
 from app.models.user import User, UserRole
 from app.requests import repository
 from app.requests.schemas import CreateManualETariffRequest
 from app.requests.tasks import run_ai_analysis
 
-ALLOWED_EXTENSIONS = {".xlsx", ".xls"}
+ALLOWED_EXTENSIONS = {".xlsx", ".xlsb"}
 MAX_FILE_SIZE = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
 
@@ -68,6 +68,9 @@ def create_chc_request(db: Session, files: list[UploadFile], modules: list[str],
         rf = repository.create_file(db, req.id, up_file.filename, s3_key, file_size)
         run_ai_analysis.delay(rf.id)
 
+    # Transition: pending → ai_processing
+    repository.update_status(db, req, RequestStatus.ai_processing)
+
     # Emails (BRD AC2, AC3)
     send_request_confirmation(user, req)
     _notify_admins_new_request(db, user.tenant_id, req)
@@ -96,6 +99,9 @@ def create_manual_etariff(db: Session, data: CreateManualETariffRequest, user: U
     rf = repository.create_file(db, req.id, filename, s3_key, len(content_bytes))
     run_ai_analysis.delay(rf.id)
 
+    # Transition: pending → ai_processing
+    repository.update_status(db, req, RequestStatus.ai_processing)
+
     send_request_confirmation(user, req)
     _notify_admins_new_request(db, user.tenant_id, req)
     return req
@@ -122,6 +128,9 @@ def create_batch_etariff(db: Session, files: list[UploadFile], user: User) -> Re
         rf = repository.create_file(db, req.id, up_file.filename, s3_key, file_size)
         run_ai_analysis.delay(rf.id)
 
+    # Transition: pending → ai_processing
+    repository.update_status(db, req, RequestStatus.ai_processing)
+
     send_request_confirmation(user, req)
     _notify_admins_new_request(db, user.tenant_id, req)
     return req
@@ -131,7 +140,7 @@ def cancel_request(db: Session, request_id: int, user: User, reason: str | None 
     """BRD F-U04 — User cancels request."""
     req = _get_user_request(db, request_id, user)
 
-    if req.status in (RequestStatus.delivered, RequestStatus.cancelled):
+    if req.status not in CANCELLABLE_STATUSES:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot cancel a delivered or already cancelled request.")
 
     was_processing = req.status == RequestStatus.processing
@@ -163,7 +172,67 @@ def get_result_download_url(db: Session, request_id: int, file_id: int, user: Us
     if not result_key:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No result available.")
     url = storage.generate_presigned_url(result_key)
-    return {"url": url, "filename": f.original_filename}
+
+    # BRD v8 — Mark has_downloaded on first download (rating trigger)
+    if not req.has_downloaded:
+        req.has_downloaded = True
+        db.commit()
+
+    show_rating_popup = req.has_downloaded and not req.has_rated
+    return {
+        "url": url,
+        "filename": f.original_filename,
+        "show_rating_popup": show_rating_popup,
+    }
+
+
+def rate_request(db: Session, request_id: int, rating: int, comment: str | None, user: User) -> Request:
+    """BRD v8 — User rates a delivered request."""
+    req = _get_user_request(db, request_id, user)
+    if req.status != RequestStatus.delivered:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Can only rate delivered requests.")
+    if req.has_rated:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Request already rated.")
+
+    req.rating = rating
+    req.rating_comment = comment
+    req.has_rated = True
+    req.rated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(req)
+    return req
+
+
+def reassign_expert(db: Session, request_id: int, expert_id: int, reason: str | None, current_user: User) -> Request:
+    """BRD v8 — Admin reassigns Expert. Notify both old & new expert."""
+    req = get_request_detail(db, request_id, current_user)
+    if req.status != RequestStatus.processing:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Can only reassign in processing status.")
+
+    new_expert = db.query(User).filter(
+        User.id == expert_id, User.role == UserRole.expert, User.is_active == True
+    ).first()
+    if not new_expert:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Expert not found.")
+    if req.assigned_expert_id == expert_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Request already assigned to this expert.")
+
+    old_expert_id = req.assigned_expert_id
+    req.assigned_expert_id = expert_id
+    req.assigned_at = datetime.now(timezone.utc)
+    if reason:
+        req.internal_note = reason
+    db.commit()
+    db.refresh(req)
+
+    # Notify old + new expert
+    from app.core.email_service import send_expert_reassigned
+    if old_expert_id:
+        old_expert = db.query(User).filter(User.id == old_expert_id).first()
+        if old_expert:
+            send_expert_reassigned(old_expert, req, removed=True)
+    send_expert_reassigned(new_expert, req, removed=False)
+    return req
 
 
 def retry_etariff(db: Session, request_id: int, user: User) -> Request:
@@ -226,8 +295,8 @@ def get_request_detail(db: Session, request_id: int, current_user: User) -> Requ
 def assign_expert(db: Session, request_id: int, expert_id: int, current_user: User) -> Request:
     """BRD F-A03 — Admin assigns Expert to request. Status → Processing."""
     req = get_request_detail(db, request_id, current_user)
-    if req.status != RequestStatus.pending:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Can only assign expert to pending requests.")
+    if req.status not in (RequestStatus.pending, RequestStatus.pending_assignment):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Can only assign expert to pending/pending_assignment requests.")
 
     expert = db.query(User).filter(User.id == expert_id, User.role == UserRole.expert, User.is_active == True).first()
     if not expert:
@@ -286,6 +355,8 @@ def approve_and_deliver(db: Session, request_id: int, notes: str | None, current
 
     if notes:
         req.admin_notes = notes
+    req.approved_by = current_user.id
+    req.approved_at = datetime.now(timezone.utc)
     repository.update_status(db, req, RequestStatus.delivered)
 
     # Send result email to user (BRD AC9, AC10)
@@ -351,12 +422,19 @@ def handle_ai_callback(db: Session, task_id: str, task_status: str, result: dict
 
     db.commit()
 
-    # Auto-deliver E-Tariff (BRD 6.3) — with idempotency guard
-    if req and req.type in (RequestType.etariff_manual, RequestType.etariff_batch):
+    if req:
         db.refresh(req)
-        if req.status not in (RequestStatus.delivered, RequestStatus.cancelled):
-            all_files_done = all(f.ai_status == "completed" for f in req.files)
-            if all_files_done:
+        all_files_done = all(f.ai_status == "completed" for f in req.files)
+
+        if all_files_done and req.status not in (RequestStatus.delivered, RequestStatus.cancelled):
+            if req.type == RequestType.chc:
+                # CHC: ai_processing → pending_assignment (wait for Admin to assign Expert)
+                req.ai_draft_s3_key = rf.ai_s3_key
+                repository.update_status(db, req, RequestStatus.pending_assignment)
+                logger.info("CHC request %s → pending_assignment via callback", req.display_id)
+                send_wp_draft_ready(db, req)
+            elif req.type in (RequestType.etariff_manual, RequestType.etariff_batch):
+                # E-Tariff: auto-deliver (BRD 6.3)
                 repository.update_status(db, req, RequestStatus.delivered)
                 logger.info("E-Tariff request %s auto-delivered via callback", req.display_id)
 
@@ -364,7 +442,6 @@ def handle_ai_callback(db: Session, task_id: str, task_status: str, result: dict
 
 
 def _check_etariff_limit(db: Session, user: User):
-    from datetime import datetime, timezone
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     today_count = db.query(Request).filter(
         Request.user_id == user.id,

@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr
 class TenantCreate(BaseModel):
     name: str
     tenant_code: str
+    subdomain: str | None = None  # BRD v8: auto-gen from tenant_code if empty
     description: str | None = None
     is_active: bool = True
     admin_email: EmailStr
@@ -13,6 +14,13 @@ class TenantCreate(BaseModel):
     # Branding (BRD 10.4)
     primary_color: str | None = None
     display_name: str | None = None
+    # Branding extended (BRD v8)
+    footer_text: str | None = None
+    tagline: str | None = None
+    # Tenant Owner (BRD v8)
+    owner_name: str | None = None
+    owner_email: str | None = None
+    owner_phone: str | None = None
     # E-Tariff limit
     etariff_daily_limit: int = 10
 
@@ -25,6 +33,15 @@ class TenantUpdate(BaseModel):
     primary_color: str | None = None
     display_name: str | None = None
     custom_email_domain: str | None = None
+    fallback_email_domain: str | None = None
+    # Branding extended (BRD v8)
+    footer_text: str | None = None
+    tagline: str | None = None
+    # Tenant Owner (BRD v8)
+    owner_name: str | None = None
+    owner_email: str | None = None
+    owner_phone: str | None = None
+    # E-Tariff limit
     etariff_daily_limit: int | None = None
 
 
@@ -36,9 +53,16 @@ class TenantResponse(BaseModel):
     description: str | None = None
     is_active: bool
     logo_s3_key: str | None = None
+    favicon_s3_key: str | None = None
     primary_color: str | None = None
     display_name: str | None = None
     custom_email_domain: str | None = None
+    fallback_email_domain: str | None = None
+    footer_text: str | None = None
+    tagline: str | None = None
+    owner_name: str | None = None
+    owner_email: str | None = None
+    owner_phone: str | None = None
     etariff_daily_limit: int = 10
     created_at: datetime
 

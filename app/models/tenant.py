@@ -21,8 +21,19 @@ class Tenant(Base):
     primary_color: Mapped[str | None] = mapped_column(String(7), nullable=True)  # e.g. #1a73e8
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    # Branding extended (BRD v4/v6)
+    favicon_s3_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    footer_text: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    tagline: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     # Email domain (BRD 10.4)
     custom_email_domain: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    fallback_email_domain: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # Tenant Owner (BRD v3)
+    owner_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    owner_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    owner_phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # E-Tariff limit (BRD 10.4)
     etariff_daily_limit: Mapped[int] = mapped_column(Integer, default=10)

@@ -9,12 +9,17 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_onboarding_complete, require_roles
 from app.models.request import RequestStatus, RequestType
 from app.models.user import User, UserRole
-from app.requests import service
+from app.requests import service, presigned_service
 from app.requests.schemas import (
     ApproveRequest,
     AssignExpertRequest,
     CancelRequest,
+    ConfirmUploadResponse,
     CreateManualETariffRequest,
+    PresignedURLRequest,
+    PresignedURLResponse,
+    RateRequest,
+    ReassignExpertRequest,
     RequestResponse,
 )
 
@@ -32,6 +37,30 @@ ADMIN_TAG = "Admin Site — Requests"
 # ════════════════════════════════════════════════════
 #  USER PORTAL endpoints
 # ════════════════════════════════════════════════════
+
+@router.post("/presigned-url", response_model=PresignedURLResponse, tags=[USER_TAG])
+def request_presigned_url(
+    payload: PresignedURLRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_onboarding_complete),
+):
+    """BRD v8 Step 1: Create request + return presigned S3 upload URL."""
+    return presigned_service.request_presigned_url(
+        db, payload.filename, payload.file_size, payload.request_type.value,
+        [m.value for m in payload.chc_modules] if payload.chc_modules else None,
+        current_user,
+    )
+
+
+@router.post("/{request_id}/confirm-upload", response_model=ConfirmUploadResponse, tags=[USER_TAG])
+def confirm_upload(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_onboarding_complete),
+):
+    """BRD v8 Step 3: Confirm S3 upload → validate file, start AI processing."""
+    return presigned_service.confirm_upload(db, request_id, current_user)
+
 
 @router.post("/chc", response_model=RequestResponse, tags=[USER_TAG])
 def create_chc_request(
@@ -118,6 +147,17 @@ def retry_etariff(
     return service.retry_etariff(db, request_id, current_user)
 
 
+@router.post("/my/{request_id}/rate", response_model=RequestResponse, tags=[USER_TAG])
+def rate_request(
+    request_id: int,
+    payload: RateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """BRD v8 — User rates a delivered request (1-5 stars)."""
+    return service.rate_request(db, request_id, payload.rating, payload.comment, current_user)
+
+
 # ════════════════════════════════════════════════════
 #  ADMIN PORTAL endpoints
 # ════════════════════════════════════════════════════
@@ -167,6 +207,17 @@ def assign_expert(
 ):
     """F-A03: Admin assigns Expert → status=Processing."""
     return service.assign_expert(db, request_id, payload.expert_id, current_user)
+
+
+@router.post("/{request_id}/reassign", tags=[ADMIN_TAG])
+def reassign_expert(
+    request_id: int,
+    payload: ReassignExpertRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_only),
+):
+    """BRD v8 — Admin reassigns Expert (while processing). Notify both."""
+    return service.reassign_expert(db, request_id, payload.expert_id, payload.reason, current_user)
 
 
 @router.post("/{request_id}/files/{file_id}/upload-result", tags=[ADMIN_TAG])

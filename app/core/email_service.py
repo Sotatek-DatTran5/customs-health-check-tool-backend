@@ -22,6 +22,11 @@ SUBJECTS = {
         "result_uploaded": "CHC — Kết quả đơn {display_id} đã sẵn sàng để duyệt",
         "result_delivered": "CHC — Kết quả đơn {display_id} đã hoàn thành",
         "password_reset": "CHC — Đặt lại mật khẩu",
+        "expert_reassigned_removed": "CHC — Bạn đã được gỡ khỏi đơn {display_id}",
+        "expert_reassigned_new": "CHC — Bạn được chuyển giao đơn {display_id}",
+        "wp_draft_ready": "CHC — WP Draft của đơn {display_id} đã sẵn sàng",
+        "sla_warning": "CHC — Cảnh báo SLA: đơn {display_id} quá 48h",
+        "sla_breach": "CHC — Vi phạm SLA: đơn {display_id} quá 72h",
     },
     "en": {
         "welcome": "CHC — Welcome to {tenant_name}",
@@ -32,6 +37,11 @@ SUBJECTS = {
         "result_uploaded": "CHC — Results for {display_id} ready for review",
         "result_delivered": "CHC — Results for {display_id} delivered",
         "password_reset": "CHC — Password Reset",
+        "expert_reassigned_removed": "CHC — Removed from request {display_id}",
+        "expert_reassigned_new": "CHC — You have been reassigned request {display_id}",
+        "wp_draft_ready": "CHC — WP Draft ready for request {display_id}",
+        "sla_warning": "CHC — SLA Warning: request {display_id} overdue 48h",
+        "sla_breach": "CHC — SLA Breach: request {display_id} overdue 72h",
     },
     "ko": {
         "welcome": "CHC — {tenant_name}에 오신 것을 환영합니다",
@@ -42,6 +52,11 @@ SUBJECTS = {
         "result_uploaded": "CHC — {display_id} 결과 검토 준비 완료",
         "result_delivered": "CHC — {display_id} 결과 전달 완료",
         "password_reset": "CHC — 비밀번호 재설정",
+        "expert_reassigned_removed": "CHC — 요청 {display_id}에서 제외되었습니다",
+        "expert_reassigned_new": "CHC — 요청 {display_id}이(가) 재배정되었습니다",
+        "wp_draft_ready": "CHC — 요청 {display_id} WP 초안 준비 완료",
+        "sla_warning": "CHC — SLA 경고: 요청 {display_id} 48시간 초과",
+        "sla_breach": "CHC — SLA 위반: 요청 {display_id} 72시간 초과",
     },
     "zh": {
         "welcome": "CHC — 欢迎加入 {tenant_name}",
@@ -52,6 +67,11 @@ SUBJECTS = {
         "result_uploaded": "CHC — {display_id} 结果已准备好审核",
         "result_delivered": "CHC — {display_id} 结果已交付",
         "password_reset": "CHC — 重置密码",
+        "expert_reassigned_removed": "CHC — 已从请求 {display_id} 中移除",
+        "expert_reassigned_new": "CHC — 您已被重新分配请求 {display_id}",
+        "wp_draft_ready": "CHC — 请求 {display_id} WP草稿已就绪",
+        "sla_warning": "CHC — SLA警告: 请求 {display_id} 超过48小时",
+        "sla_breach": "CHC — SLA违规: 请求 {display_id} 超过72小时",
     },
 }
 
@@ -79,6 +99,25 @@ def send_welcome_email(user, tenant_name: str, password: str):
         f"Password: {password}\n\n"
         f"Login: {login_url}\n"
         f"Please change your password after first login."
+    )
+    send_email(to=user.email, subject=subject, body=body)
+
+
+# ── 1b. Password reset email (BRD v8 — forgot password) ──
+
+def send_password_reset_email(user, token: str):
+    locale = getattr(user, "locale", "vi")
+    subject = _get_subject(locale, "password_reset")
+
+    reset_url = f"http://{settings.BASE_DOMAIN}/auth/reset-password?token={token}"
+    if getattr(user, "tenant", None):
+        reset_url = f"http://{user.tenant.subdomain}.{settings.BASE_DOMAIN}/auth/reset-password?token={token}"
+
+    body = (
+        f"You requested a password reset.\n\n"
+        f"Click the link below to reset your password (valid for 1 hour):\n"
+        f"{reset_url}\n\n"
+        f"If you did not request this, please ignore this email."
     )
     send_email(to=user.email, subject=subject, body=body)
 
@@ -194,3 +233,77 @@ def send_result_delivered(db, req):
         f"You can also download from your dashboard."
     )
     send_email(to=user.email, subject=subject, body=body)
+
+
+# ── 8. Expert reassignment (BRD v8) ──
+
+def send_expert_reassigned(expert, req, removed: bool = False):
+    locale = getattr(expert, "locale", "vi")
+    key = "expert_reassigned_removed" if removed else "expert_reassigned_new"
+    subject = _get_subject(locale, key, display_id=req.display_id)
+    if removed:
+        body = (
+            f"Bạn đã được gỡ khỏi đơn {req.display_id}.\n"
+            f"Đơn đã được chuyển cho chuyên viên khác."
+        )
+    else:
+        body = (
+            f"Bạn đã được chuyển giao xử lý đơn {req.display_id}.\n"
+            f"Vui lòng kiểm tra và xử lý tại:\n"
+            f"http://{settings.ADMIN_DOMAIN}/requests/{req.id}"
+        )
+    send_email(to=expert.email, subject=subject, body=body)
+
+
+# ── 9. WP Draft ready (BRD v8 — AI completes, notify Admin) ──
+
+def send_wp_draft_ready(db, req):
+    from app.models.user import User, UserRole
+    admins = db.query(User).filter(
+        User.tenant_id == req.tenant_id, User.role == UserRole.tenant_admin, User.is_active == True
+    ).all()
+    for admin in admins:
+        locale = getattr(admin, "locale", "vi")
+        subject = _get_subject(locale, "wp_draft_ready", display_id=req.display_id)
+        body = (
+            f"WP Draft cho đơn {req.display_id} đã được AI xử lý xong.\n"
+            f"Vui lòng assign Expert để hoàn thiện kết quả.\n\n"
+            f"Admin portal: http://{settings.ADMIN_DOMAIN}/requests/{req.id}"
+        )
+        send_email(to=admin.email, subject=subject, body=body)
+
+
+# ── 10. SLA Warning (BRD v8 — processing > 48h) ──
+
+def send_sla_warning(db, req):
+    from app.models.user import User, UserRole
+    recipients = db.query(User).filter(
+        User.tenant_id == req.tenant_id, User.is_active == True,
+        User.role.in_([UserRole.tenant_admin, UserRole.expert]),
+    ).all()
+    filtered = [u for u in recipients if u.role == UserRole.tenant_admin or u.id == req.assigned_expert_id]
+    for r in filtered:
+        locale = getattr(r, "locale", "vi")
+        subject = _get_subject(locale, "sla_warning", display_id=req.display_id)
+        body = (
+            f"Cảnh báo: đơn {req.display_id} đã quá 48h trong trạng thái processing.\n"
+            f"Vui lòng kiểm tra và hoàn thiện kết quả."
+        )
+        send_email(to=r.email, subject=subject, body=body)
+
+
+# ── 11. SLA Breach (BRD v8 — processing > 72h) ──
+
+def send_sla_breach(db, req):
+    from app.models.user import User, UserRole
+    admins = db.query(User).filter(
+        User.tenant_id == req.tenant_id, User.role == UserRole.tenant_admin, User.is_active == True
+    ).all()
+    for admin in admins:
+        locale = getattr(admin, "locale", "vi")
+        subject = _get_subject(locale, "sla_breach", display_id=req.display_id)
+        body = (
+            f"Vi phạm SLA: đơn {req.display_id} đã quá 72h.\n"
+            f"Cần can thiệp khẩn cấp!"
+        )
+        send_email(to=admin.email, subject=subject, body=body)

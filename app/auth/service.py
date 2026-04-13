@@ -13,7 +13,7 @@ from app.core.security import (
     validate_password_strength,
 )
 from app.auth import repository
-from app.auth.schemas import LoginRequest, ResetPasswordRequest, ChangePasswordRequest
+from app.auth.schemas import LoginRequest, ResetPasswordRequest, ChangePasswordRequest, ForgotPasswordRequest
 from app.models.user import User
 
 
@@ -99,3 +99,18 @@ def change_password(db: Session, current_user: User, payload: ChangePasswordRequ
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is incorrect")
 
     repository.update_password(db, current_user, hash_password(payload.new_password))
+
+
+def forgot_password(db: Session, payload: ForgotPasswordRequest):
+    """BRD v8 — Self-service forgot password. Always 200 (no email enumeration)."""
+    import secrets
+    from app.core.email_service import send_password_reset_email
+
+    user = repository.get_user_by_email(db, payload.email)
+    if not user:
+        return  # Silent — no email enumeration
+
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    repository.create_reset_token(db, user.id, token, expires_at)
+    send_password_reset_email(user, token)
