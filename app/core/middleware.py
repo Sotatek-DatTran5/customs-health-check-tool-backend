@@ -14,8 +14,8 @@ def _is_ip_address(host: str) -> bool:
 async def tenant_middleware(request: Request, call_next):
     host = request.headers.get("host", "").split(":")[0]
 
-    # Admin site, base domain, or direct IP — skip tenant resolution
-    if host in (settings.ADMIN_DOMAIN, settings.BASE_DOMAIN) or _is_ip_address(host):
+    # Admin site, base domain, direct IP, or localhost — skip tenant resolution
+    if host in (settings.ADMIN_DOMAIN, settings.BASE_DOMAIN, "localhost", "127.0.0.1") or _is_ip_address(host):
         return await call_next(request)
 
     # User site — extract subdomain
