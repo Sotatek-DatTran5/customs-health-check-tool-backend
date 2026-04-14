@@ -1,7 +1,7 @@
 # CHC Backend — User Portal API Documentation
 
 > Tài liệu API chi tiết dành cho FE team tích hợp **User Portal** (trang nguoi dung cuoi).
-> BRD v8 — Last updated: 2026-04-13
+> BRD v8 — Last updated: 2026-04-14
 
 ---
 

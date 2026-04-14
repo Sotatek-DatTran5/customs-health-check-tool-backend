@@ -2,7 +2,7 @@
 
 > Tai lieu API chi tiet danh cho FE team tich hop **Admin Portal** (trang quan tri).
 > Bao gom ca cac API server-to-server (webhook).
-> BRD v8 — Last updated: 2026-04-13
+> BRD v8 — Last updated: 2026-04-14
 
 ---
 
@@ -413,6 +413,19 @@ Super Admin only. `?limit=10`
 `?limit=10`
 
 ### 8.5. GET `/dashboard/role-distribution`
+
+Phan phoi role trong tenant.
+
+**Response `200`:**
+
+```json
+{
+  "super_admin": 1,
+  "tenant_admin": 2,
+  "expert": 5,
+  "user": 42
+}
+```
 
 ---
 
