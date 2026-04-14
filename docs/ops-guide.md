@@ -253,9 +253,8 @@ cp .env.example .env
 ```bash
 git pull
 docker compose up -d --build
-# Migration se chay tu dong trong deploy.sh
-# Hoac chay thu cong:
-docker compose exec app uv run alembic upgrade head
 ```
+
+Migration **tu dong chay khi container khoi dong** qua `scripts/entrypoint.sh` — khong can chay thu cong.
 
 > **Luu y:** `scripts/start.sh` chi start container hien co, **khong rebuild**. Dung `docker compose up -d --build` khi co code moi.

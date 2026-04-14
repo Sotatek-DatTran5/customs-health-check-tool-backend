@@ -9,4 +9,6 @@ RUN uv sync --no-dev
 
 COPY . .
 
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8329"]
+RUN chmod +x scripts/entrypoint.sh
+
+CMD ["scripts/entrypoint.sh"]
